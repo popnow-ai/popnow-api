@@ -1,0 +1,41 @@
+# PopNow API
+
+> PopNow API is a REST API for AI video, image and music generation: one API key and one credit
+> wallet give access to models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image,
+> Flux and Suno. This repository holds the OpenAPI 3.1 spec, runnable examples and Markdown docs.
+
+- Base URL: https://api.popnow.ai (native endpoints under /api/v1, OpenAI-compatible endpoints under /v1)
+- Authentication: `Authorization: Bearer sk-popnow-...` (create keys at https://popnow.ai/api/console/keys)
+- Envelope: every native JSON response is `{code, msg, data, request_id}`; `code: 200` means success
+- Async flow: POST /api/v1/jobs/quote (optional price check) -> POST /api/v1/jobs/createTask -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
+- Models and prices: GET /api/v1/models (1 credit = US$0.01; failed tasks are not charged)
+- OpenAPI spec: https://github.com/popnow-ai/popnow-api/blob/main/openapi.yaml (also https://popnow.ai/docs/openapi.yaml)
+- Website: https://popnow.ai - Docs: https://popnow.ai/docs - Pricing: https://popnow.ai/pricing - MCP server: https://popnow.ai/mcp
+
+## Docs
+
+- [Quickstart](https://github.com/popnow-ai/popnow-api/blob/main/docs/quickstart.md): Create an API key, send your first request and download the result in about five minutes.
+- [Authentication](https://github.com/popnow-ai/popnow-api/blob/main/docs/authentication.md): The key format, where to keep a key, per-key restrictions, rotation and what to do if a key leaks.
+- [Tasks](https://github.com/popnow-ai/popnow-api/blob/main/docs/tasks.md): Create a task, follow its state, read the result, and use wait, the task list, retry and purge.
+- [Media](https://github.com/popnow-ai/popnow-api/blob/main/docs/media.md): Send reference images, video and audio by URL, inline or by upload, and download the files a task produces.
+- [Webhooks](https://github.com/popnow-ai/popnow-api/blob/main/docs/webhooks.md): Receive finished tasks at your own URL, verify the signature, and handle retries and duplicates.
+- [Idempotency](https://github.com/popnow-ai/popnow-api/blob/main/docs/idempotency.md): Retry after a timeout without generating twice or paying twice.
+- [Errors](https://github.com/popnow-ai/popnow-api/blob/main/docs/errors.md): Every business code, what it means, and which errors are worth retrying.
+- [Rate limits](https://github.com/popnow-ai/popnow-api/blob/main/docs/limits.md): How many requests you can send, what happens when you send more, and the other limits worth knowing.
+- [Assets and LoRA files](https://github.com/popnow-ai/popnow-api/blob/main/docs/assets.md): Keep files in your asset library and reuse them by URI, read your characters, and bring your own LoRA weights.
+- [Production checklist](https://github.com/popnow-ai/popnow-api/blob/main/docs/production-integration.md): What to check before real users depend on your integration — keys, retries, webhooks, storage, costs and monitoring.
+- [Recipes](https://github.com/popnow-ai/popnow-api/blob/main/docs/recipes.md): Copy-and-run Python and Node.js recipes for the PopNow AI image, video and text-to-speech API - batch images from a CSV, photo to video, voiceovers line by line, and a Slack alert when a video is ready.
+- [OpenAI Videos compatibility](https://github.com/popnow-ai/popnow-api/blob/main/docs/openai-videos.md): Call PopNow video models with the request and response shapes of the OpenAI Videos API.
+- [ComfyUI node for cloud generation](https://github.com/popnow-ai/popnow-api/blob/main/docs/comfyui.md): Run cloud AI image, video and audio models inside ComfyUI with one custom node file and the PopNow API. No GPU or model downloads; install steps, inputs, pricing and error fixes.
+
+## Examples
+
+- [curl](https://github.com/popnow-ai/popnow-api/tree/main/examples/curl): bash scripts for list models, quote, text-to-image, image-to-video, poll a task, upload a file and verify a webhook signature
+- [Python](https://github.com/popnow-ai/popnow-api/tree/main/examples/python): the same tasks with the standard library only, plus a webhook receiver
+- [Node.js](https://github.com/popnow-ai/popnow-api/tree/main/examples/node): the same tasks for Node.js 18+ with no dependencies, plus a webhook receiver
+- [n8n](https://github.com/popnow-ai/popnow-api/blob/main/examples/n8n/popnow-workflow.json): importable workflow that creates a task, polls it and returns the file URL
+
+## Optional
+
+- [Full docs in one file](https://github.com/popnow-ai/popnow-api/blob/main/llms-full.txt)
+- [Live documentation index](https://popnow.ai/docs/llms.txt)

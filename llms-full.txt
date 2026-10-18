@@ -1,0 +1,1838 @@
+# PopNow API
+
+> PopNow API is a REST API for AI video, image and music generation: one API key and one credit
+> wallet give access to models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image,
+> Flux and Suno. This repository holds the OpenAPI 3.1 spec, runnable examples and Markdown docs.
+
+- Base URL: https://api.popnow.ai (native endpoints under /api/v1, OpenAI-compatible endpoints under /v1)
+- Authentication: `Authorization: Bearer sk-popnow-...` (create keys at https://popnow.ai/api/console/keys)
+- Envelope: every native JSON response is `{code, msg, data, request_id}`; `code: 200` means success
+- Async flow: POST /api/v1/jobs/quote (optional price check) -> POST /api/v1/jobs/createTask -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
+- Models and prices: GET /api/v1/models (1 credit = US$0.01; failed tasks are not charged)
+- OpenAPI spec: https://github.com/popnow-ai/popnow-api/blob/main/openapi.yaml (also https://popnow.ai/docs/openapi.yaml)
+- Website: https://popnow.ai - Docs: https://popnow.ai/docs - Pricing: https://popnow.ai/pricing - MCP server: https://popnow.ai/mcp
+
+---
+
+# Quickstart
+
+> Create an API key, send your first request and download the result in about five minutes.
+
+Online version: <https://popnow.ai/docs/quickstart>
+
+This page takes you from nothing to a generated image with one key and one request. Everything after that — video, audio, webhooks, uploads — is the same request with a different `model` and `input`.
+
+## Before you start
+
+* **A PopNow account.** Sign up at [popnow.ai](https://popnow.ai). The API spends the same credits as the website; buy a [credit pack](https://popnow.ai/pricing). There is no separate API plan.
+* **A terminal with `curl`.** The examples use bash. On Windows, use WSL or Git Bash.
+
+## 1. Create an API key
+
+Open the [API console](https://popnow.ai/api/console/keys) and choose **Create key**. Copy the key straight away: the full value is shown only once. Then put it in an environment variable so it never lands in your code:
+
+```bash
+export POPNOW_API_KEY="sk-popnow-..."
+```
+
+Every key starts with `sk-popnow-` and spends the credits in your account. Keep it on your server; [Authentication](authentication.md) explains restrictions, rotation and what to do if a key leaks.
+
+## 2. Send a task
+
+Paste this into the same terminal. It asks a fast image model for one picture and costs a couple of credits:
+
+```bash
+export POPNOW_API_KEY="sk-popnow-..."   # your key from the API console
+
+curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask?wait=60" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+  "model": "alibaba/z-image-turbo/text-to-image",
+  "input": {
+    "prompt": "A small red fox curled up in a teacup, soft morning light, studio photo"
+  }
+}'
+```
+
+What each part does:
+
+* **`model`** is the model ID — which model runs and which job it does. Every model's ID is on [Models](https://popnow.ai/docs/models).
+* **`input`** is checked against that model's own input schema. Unknown fields are rejected, so typos fail fast instead of being ignored.
+* **`Idempotency-Key`** makes a retry safe: send the same key again after a timeout and you get the original task back instead of a second charge. See [Idempotency](idempotency.md).
+* **`?wait=60`** keeps the connection open for up to 60 seconds, so a quick image comes back in this same response.
+
+## 3. Read the result
+
+A finished task looks like this:
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
+    "model": "alibaba/z-image-turbo/text-to-image",
+    "state": "succeeded",
+    "output": {
+      "assets": [
+        {
+          "url": "https://…signed-link…",
+          "expiresAt": "2026-10-16T09:20:00Z",
+          "mime": "image/png",
+          "width": 1024,
+          "height": 1024
+        }
+      ]
+    },
+    "credits": 2,
+    "cost": "0.02",
+    "settled": true
+  },
+  "request_id": "req_…"
+}
+```
+
+* `state` is `succeeded`. A task that could not finish says `failed` and carries an `errorCode`; see [Errors](errors.md#task-failure-codes).
+* `output.assets[0].url` is a signed link to the file. It works for about 20 minutes, needs no API key, and you can always get a fresh one by reading the task again.
+* `credits` is what the task was charged, in whole credits (1 credit = $0.01). `cost` carries the same amount as a US dollar string.
+
+If the model needs more than 60 seconds — every video model does — the response is a `202` with `state: "queued"` and a `taskId` instead. Ask for the task until it is final:
+
+```bash
+curl "https://api.popnow.ai/api/v1/jobs/recordInfo?taskId=job_..." \
+  -H "Authorization: Bearer $POPNOW_API_KEY"
+```
+
+Check every few seconds until `state` is `succeeded`, `failed` or `expired`. In production, pass a `callBackUrl` and let a [webhook](webhooks.md) tell you instead.
+
+## The same request in code
+
+```javascript title="JavaScript (Node.js 18+)"
+const API = 'https://api.popnow.ai/api/v1';
+const headers = {
+  Authorization: `Bearer ${process.env.POPNOW_API_KEY}`,
+  'Content-Type': 'application/json',
+};
+
+const created = await fetch(`${API}/jobs/createTask`, {
+  method: 'POST',
+  headers: { ...headers, 'Idempotency-Key': crypto.randomUUID() },
+  body: JSON.stringify({
+    model: 'alibaba/z-image-turbo/text-to-image',
+    input: { prompt: 'A small red fox curled up in a teacup, soft morning light' },
+  }),
+}).then((r) => r.json());
+if (created.code !== 200) throw new Error(`${created.code} ${created.msg}`);
+
+// Poll until the task reaches a final state.
+let task;
+do {
+  await new Promise((r) => setTimeout(r, 3000));
+  const res = await fetch(`${API}/jobs/recordInfo?taskId=${created.data.taskId}`, { headers });
+  task = (await res.json()).data;
+} while (task.state === 'queued' || task.state === 'running');
+
+console.log(task.state, task.output?.assets?.[0]?.url);
+```
+
+```python title="Python (requests)"
+import os, time, uuid, requests
+
+API = "https://api.popnow.ai/api/v1"
+headers = {"Authorization": f"Bearer {os.environ['POPNOW_API_KEY']}"}
+
+created = requests.post(
+    f"{API}/jobs/createTask",
+    headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+    json={
+        "model": "alibaba/z-image-turbo/text-to-image",
+        "input": {"prompt": "A small red fox curled up in a teacup, soft morning light"},
+    },
+    timeout=30,
+).json()
+if created["code"] != 200:
+    raise RuntimeError(f'{created["code"]} {created["msg"]}')
+
+# Poll until the task reaches a final state.
+while True:
+    time.sleep(3)
+    task = requests.get(
+        f"{API}/jobs/recordInfo",
+        headers=headers,
+        params={"taskId": created["data"]["taskId"]},
+        timeout=30,
+    ).json()["data"]
+    if task["state"] not in ("queued", "running"):
+        break
+
+print(task["state"], task.get("output", {}).get("assets", [{}])[0].get("url"))
+```
+
+## The response envelope
+
+Every JSON response has the same four fields:
+
+```json
+{ "code": 200, "msg": "success", "data": { }, "request_id": "req_…" }
+```
+
+`code` is a business code, not an HTTP status: `200` means success, anything else is an error listed on [Errors](errors.md). Branch on `code`, never on the wording of `msg`. Quote `request_id` when you contact support.
+
+## Next
+
+- [Pick a model](https://popnow.ai/docs/models): Every model ID, its parameters and its price in credits.
+- [How tasks work](tasks.md): States, polling, wait, retries and the task list.
+- [Upload your own files](media.md): Send reference images, video and audio.
+- [Get notified](webhooks.md): Receive the result instead of polling.
+
+---
+
+# Authentication
+
+> The key format, where to keep a key, per-key restrictions, rotation and what to do if a key leaks.
+
+Online version: <https://popnow.ai/docs/authentication>
+
+Every request to the API carries one API key in the `Authorization` header:
+
+```http
+Authorization: Bearer sk-popnow-3f9c0a…
+```
+
+There is no other way to authenticate: keys in the URL query string are never accepted, and your popnow\.ai login does not work on the API.
+
+One exception: the [OpenAI-compatible routes](openai-videos.md) under `/v1` also read the key from an `x-api-key` header, so OpenAI-style clients work unchanged. The native `/api/v1` routes only read `Authorization`.
+
+## What a key looks like
+
+A key is `sk-popnow-` followed by 48 lowercase hexadecimal characters. The API console only ever shows the first few characters after you create it, so a key you lose cannot be recovered — create a new one instead.
+
+## Create a key
+
+1. Sign in at [popnow.ai](https://popnow.ai) and open the [API console](https://popnow.ai/api/console/keys).
+2. Choose **Create key** and give it a name that says where it will live, such as `production-backend`.
+3. Copy the key immediately. It is shown once.
+
+You can hold several keys at once — one per environment or per service is a good habit, because you can then revoke one without touching the others. All keys spend from the same credit balance.
+
+## Where to keep it
+
+* In an environment variable or your platform's secret store (`POPNOW_API_KEY`), not in source code.
+* Never in a browser, a mobile app or any other code that runs on someone else's device. Anyone who can read the key can spend your credits. Put your own server in between and let it call PopNow.
+* Not in logs. If you log request headers, drop `Authorization` first.
+
+## Restrict what a key can do
+
+Each key can carry its own limits, set in the API console:
+
+| Restriction    | What it does                                                      | Error when it blocks a request |
+| -------------- | ----------------------------------------------------------------- | ------------------------------ |
+| Allowed models | The key can call only the models you list                         | `40301`                        |
+| IP allowlist   | Requests must come from these addresses or ranges                 | `40302`                        |
+| Spend caps     | Daily, monthly and lifetime limits for this key, shown in credits | `40202`                        |
+
+By default a key has no restrictions and no caps. Give production keys the narrowest set that still works.
+
+## Tasks belong to the key that created them
+
+`recordInfo`, `retry`, `purge`, the task list and usage only see tasks created **with the same key**. A task created with another key on your account answers `404`, exactly like a task that does not exist. Generations you start on the website are not visible to any key either. For an account-wide view, use the API console.
+
+## Rotation
+
+To replace a key without downtime:
+
+1. Create the new key.
+2. Deploy it everywhere the old one was used.
+3. Watch the old key's last-used time in the console stop moving.
+4. Revoke the old key.
+
+## If a key leaks
+
+1. **Revoke it now** in the API console. Revocation takes effect on the next request.
+2. **Create a replacement** and deploy it.
+3. **Check what it was used for**: the console's logs and usage show every task the key created.
+4. **Tighten the replacement** with an IP allowlist and a spend cap.
+
+Contact [support](https://popnow.ai/contact) if you see spending you did not make.
+
+## What a failure looks like
+
+All three authentication problems return HTTP `401` with `code: 401`; `msg` tells them apart:
+
+| `msg` says                         | What happened                                      | What to do                                                                                      |
+| ---------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Missing credentials                | No `Authorization` header arrived                  | Check that the header is set and that the environment variable is loaded in the running process |
+| API key format is not recognized   | Something arrived, but it is not a PopNow key      | Make sure it starts with `sk-popnow-`; you may have pasted a different value                    |
+| Credentials are invalid or expired | The key does not exist, was revoked or has expired | Create a new key; retrying will never succeed                                                   |
+
+A valid key can still be refused with `403` — for example when the account's email address is not verified yet (`40310`). See [Errors](errors.md#permissions).
+
+---
+
+# Tasks
+
+> Create a task, follow its state, read the result, and use wait, the task list, retry and purge.
+
+Online version: <https://popnow.ai/docs/tasks>
+
+Every generation is a **task**. You create it with one call, it runs on its own, and you collect the result when it is ready — by asking for it, by waiting on the first call, or by receiving a [webhook](webhooks.md).
+
+1. `POST /jobs/createTask` → `taskId`
+2. `GET /jobs/recordInfo` → `state`
+3. `GET output.assets[].url`
+
+Three calls, in this order. Poll recordInfo until the state is final, then download the file before its link expires.
+
+## Create a task
+
+```bash
+curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "model": "alibaba/wan-3.0/image-to-video",
+    "input": {
+      "image_url": "https://media.popnow.ai/movie/lighthouse.webp",
+      "prompt": "Waves roll in slowly, the camera drifts toward the lighthouse",
+      "resolution": "480p",
+      "duration_seconds": 5
+    },
+    "callBackUrl": "https://your-app.example.com/hooks/popnow"
+  }'
+```
+
+### Body
+
+| Field                        | Required | Meaning                                                                          |
+| ---------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `model`                      | Yes      | The model ID from [Models](https://popnow.ai/docs/models)                                         |
+| `input`                      | Yes      | The model's own fields, validated against its input schema                       |
+| `callBackUrl`                | No       | Public HTTPS URL that receives the finished task. See [Webhooks](webhooks.md) |
+| `quoteId`, `expectedCredits` | No       | Lock in a price you confirmed with [jobs/quote](https://popnow.ai/docs/billing#quote)             |
+
+### Headers
+
+| Header                              | Meaning                                                                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `Authorization: Bearer sk-popnow-…` | Your API key                                                                                                            |
+| `Idempotency-Key`                   | Strongly recommended. A retry with the same key returns the original task. See [Idempotency](idempotency.md)         |
+| `X-PopNow-Retention`                | Optional. Seconds to keep this task's outputs and prompt. It can only shorten how long things are kept, never extend it |
+| `Accept-Language`                   | Optional. Language of error messages. See [Errors](errors.md#error-message-language)                                         |
+
+### Response
+
+A new task comes back as HTTP `202`:
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
+    "state": "queued",
+    "estimatedCredits": 34,
+    "estimatedCost": "0.34",
+    "deadlineAt": "2026-10-16T09:40:00Z"
+  },
+  "request_id": "req_…"
+}
+```
+
+`202` means **accepted**, not finished. `estimatedCredits` is the amount held from your balance — the most this task can cost (`estimatedCost` is the same amount in US dollars). If creation fails instead, nothing is created and nothing is held; the `code` tells you why ([Errors](errors.md)).
+
+## States
+
+`queued` → `running` → `succeeded` / `failed` / `expired`
+
+A task is in exactly one state at a time. Only succeeded is charged; every other final state returns the held credits in full.
+
+| State       | Final? | Meaning                                                                    |
+| ----------- | ------ | -------------------------------------------------------------------------- |
+| `queued`    | No     | Accepted, waiting to start                                                 |
+| `running`   | No     | Generating                                                                 |
+| `succeeded` | Yes    | Done; the files are in `output.assets`                                     |
+| `failed`    | Yes    | Could not finish; see `errorCode` and `errorMessage`. The hold is released |
+| `expired`   | Yes    | Passed its deadline without finishing. The hold is released                |
+| `canceled`  | Yes    | Only on old records. An accepted task cannot be canceled today             |
+
+Treat any state you do not recognise as "not final yet" and keep reading.
+
+## Skip the polling loop with `wait`
+
+Add `?wait=<seconds>` (up to 60) to `createTask` and the connection stays open until the task finishes or the time runs out:
+
+* Finished in time → HTTP `200` with the full task record, the same shape `recordInfo` returns. Check `data.state`: final does not always mean succeeded.
+* Not finished → the ordinary `202`, and you carry on polling or wait for the webhook.
+
+Use it for images and short audio; video almost always outlasts 60 seconds. Disconnecting early does not stop or cancel the task.
+
+## Read a task
+
+```bash
+curl "https://api.popnow.ai/api/v1/jobs/recordInfo?taskId=job_01JH8Z4Q5W2N7R3K9M6P1C0VXD" \
+  -H "Authorization: Bearer $POPNOW_API_KEY"
+```
+
+| Field                                    | Meaning                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `taskId`, `model`, `state`               | Which task, which model, where it is                                                                                            |
+| `input`                                  | The input as it was run, including the `seed` that was picked if you left it out                                                |
+| `output.assets[]`                        | The files. Each has `url`, `expiresAt`, `mime`, and when it applies `width`, `height`, `durationSeconds`, `bytes`, `role`       |
+| `errorCode`, `errorMessage`              | Why a task failed. Branch on `errorCode`, show `errorMessage`                                                                   |
+| `credits`, `cost`, `settled`             | While `settled` is `false`, `credits` is the hold; once `true`, it is the final charge. `cost` is the same amount in US dollars |
+| `createdAt`, `completedAt`, `deadlineAt` | Timestamps; `deadlineAt` is when an unfinished task expires                                                                     |
+| `retention.outputsExpireAt`              | When this task's files will be removed                                                                                          |
+| `contentState`                           | `present`, or `expired` / `purged` once the content has been removed                                                            |
+
+### Three different expiry times
+
+* **`deadlineAt`** — how long the task may run. Past it, the task becomes `expired` and the hold is released.
+* **`output.assets[].expiresAt`** — how long that one signed link works, about 20 minutes. Read the task again for a fresh link; the file itself is still there.
+* **`retention.outputsExpireAt`** — when the stored file is removed. Download anything you want to keep before then, or save it to your [asset library](assets.md).
+
+### What `output` contains
+
+Most tasks return one asset. Some return more: several images when the model makes variations, a joined clip plus the new segment for video extension (`role: "video"` then `role: "segment"`), or a base image plus transparent layers for layer separation (each with a `layer` object). Speech-to-text returns the transcript in `output.text`.
+
+Asset links are bearer links: anyone with the URL can download the file until it expires, and you should **not** send your API key when fetching them.
+
+## Webhooks first, polling as a fallback
+
+Polling works, but a webhook is cheaper for both sides: you hear about the result the moment it exists and spend nothing on requests in between. A robust integration uses both — webhooks for the normal path, and an occasional `recordInfo` sweep for any task whose webhook you did not receive.
+
+When you poll, back off: every 2–3 seconds for images, every 10–15 seconds for video, and stop at `deadlineAt`.
+
+## The task list
+
+`GET /api/v1/jobs` returns the tasks this key created, newest first, without inputs or outputs:
+
+```bash
+curl "https://api.popnow.ai/api/v1/jobs?state=failed&from=2026-10-01&limit=50" \
+  -H "Authorization: Bearer $POPNOW_API_KEY"
+```
+
+Filters: `from` and `to` (UTC dates, at most 92 days apart; the default is the last seven days), `state`, `model`, `limit` (up to 100). When `hasMore` is `true`, pass `nextCursor` back as `cursor` with the same filters.
+
+## Retry a failed task
+
+`POST /api/v1/jobs/retry` with `{ "taskId": "…" }` creates a **new** task from a `failed` or `expired` one, using its original input at today's price. The original task is never changed. It answers `409` while the source task is not final yet, and cannot retry a task that succeeded — create a new one instead.
+
+## Delete a task's content
+
+`POST /api/v1/jobs/purge` with `{ "taskId": "…" }` deletes the task's files, its result and its stored prompt. The billing record stays: the charge, the model, the state and the timestamps remain, and the response says so with `billingRetained: true`. Only finished tasks can be purged, and repeating the call is safe.
+
+## Next
+
+* [Webhooks](webhooks.md) — receive results instead of polling.
+* [Media](media.md) — upload your own reference files.
+* [Errors](errors.md) — every code and whether to retry.
+
+---
+
+# Media
+
+> Send reference images, video and audio by URL, inline or by upload, and download the files a task produces.
+
+Online version: <https://popnow.ai/docs/media>
+
+Many models take files as input — a photo to animate, a clip to extend, a voice sample, a song. There are four ways to hand one over, and one way to get results back.
+
+## Four ways to send a file
+
+| You have                     | Send it as                                                | Best for                                                      |
+| ---------------------------- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| A public HTTPS link          | The URL itself, e.g. `"image_url": "https://…/photo.jpg"` | Files you already host                                        |
+| A small image in memory      | A data URI, e.g. `"image_url": "data:image/png;base64,…"` | Quick tests, images under 1 MiB                               |
+| A local file                 | An upload, then `"image_url": "popnow://f/fil_…"`         | Anything else, including video and audio                      |
+| A file in your asset library | `"image_url": "popnow://a/ast_…"`                         | Files you reuse across many tasks. See [Assets](assets.md) |
+
+Whichever you choose, the file goes in the field the model's schema declares for it (`image_url`, `image_urls`, `video_url`, `audio_url` …).
+
+### Public links
+
+The link must return **the file itself** and stay reachable without login while the task runs. A share page from a cloud drive or social network returns a web page, not the file, and the task fails with `invalid_asset`; download the file and upload it instead.
+
+### Inline images
+
+Images can be sent as a standard Base64 data URI with its MIME type: JPEG, PNG, WebP or GIF, at most 1 MiB decoded and 8,192 pixels per side each, up to 16 images per request, and the whole JSON body under 2 MiB. Bare Base64, SVG and inline video or audio are not accepted. Inline images are stored as uploads on your account, so the task's `input` shows a `popnow://` URI instead of echoing the bytes back.
+
+## Upload a file
+
+Uploading takes three calls: ask for an upload ticket, `PUT` the bytes, then commit.
+
+### Ask for a ticket
+
+```bash
+FILE=reference.png
+CONTENT_TYPE=image/png
+BYTES=$(wc -c < "$FILE" | tr -d ' ')
+
+TICKET=$(curl -s -X POST "https://api.popnow.ai/api/v1/common/upload-url" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"contentType\": \"$CONTENT_TYPE\", \"bytes\": $BYTES}")
+UPLOAD_URL=$(echo "$TICKET" | jq -r .data.uploadUrl)
+FILE_ID=$(echo "$TICKET" | jq -r .data.fileId)
+```
+
+The response carries `fileId`, `uploadUrl`, the exact `headers` to send, `expiresAt` (about 20 minutes away) and `maxBytes`. There is no file name: storage paths are always chosen by the server.
+
+### PUT the bytes
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X PUT "$UPLOAD_URL" \
+  -H "Content-Type: $CONTENT_TYPE" \
+  -H "Content-Length: $BYTES" \
+  --data-binary @"$FILE"
+```
+
+Send every header from the ticket exactly as given — both are part of the signature — and **no** `Authorization` header. In a browser, leave out `Content-Length` and send a `File` or `Blob` of exactly the declared size; the browser sets it for you.
+
+### Commit
+
+```bash
+curl -s -X POST "https://api.popnow.ai/api/v1/files/$FILE_ID/commit" \
+  -H "Authorization: Bearer $POPNOW_API_KEY"
+```
+
+Commit checks the size, the type and the file signature, and returns the URI to use:
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "fileId": "fil_01k3m8x9q2z4v7n5p6r8s0t1w3",
+    "status": "ready",
+    "uri": "popnow://f/fil_01k3m8x9q2z4v7n5p6r8s0t1w3",
+    "contentType": "image/png",
+    "bytes": 402118,
+    "width": 1024,
+    "height": 1024,
+    "expiresAt": "2026-10-17T09:12:00Z"
+  },
+  "request_id": "req_…"
+}
+```
+
+Put `uri` in the model's field, for example `"image_url": "popnow://f/fil_…"`. A `popnow://` URI only works with keys on your own account. Committing twice is safe.
+
+### Upload limits
+
+| Type         | `contentType`                                        | Largest file | Longest duration |
+| ------------ | ---------------------------------------------------- | ------------ | ---------------- |
+| Image        | `image/jpeg`, `image/png`, `image/webp`, `image/gif` | 10 MiB       | —                |
+| Video        | `video/mp4`, `video/webm`                            | 90 MiB       | 600 seconds      |
+| Audio        | `audio/mpeg`, `audio/wav`                            | 90 MiB       | 600 seconds      |
+| LoRA weights | `application/octet-stream` (a `.safetensors` file)   | 2 GiB        | —                |
+
+A model can accept less than this; its schema says so per field. Uploaded files are temporary — the commit response's `expiresAt` tells you when the file is removed — so upload shortly before you create the task. To keep a file for repeated use, save it to your [asset library](assets.md).
+
+If a commit answers `40003`, the bytes you sent do not match the ticket (different size, type or content). Ask for a new ticket and upload again.
+
+## Download results
+
+A finished task lists its files in `output.assets`, each with a ready-to-use `url`:
+
+```bash
+curl -L -o result.mp4 "$(curl -s "https://api.popnow.ai/api/v1/jobs/recordInfo?taskId=$TASK_ID" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" | jq -r '.data.output.assets[0].url')"
+```
+
+* The link is signed and works for about **20 minutes** (`expiresAt`). Do not store it; store the `taskId` and read the task again for a fresh link.
+* Do not attach your API key when downloading. The link itself is the permission, and anyone holding it can download the file until it expires.
+* To mint a link without reading the whole task, call `POST /api/v1/common/download-url` with `{ "taskId": "…" }` (and optionally the asset's `key`).
+
+The files themselves are kept until the time in the task's `retention.outputsExpireAt`, or until you [purge](tasks.md#delete-a-tasks-content) the task. Copy anything you need beyond that to your own storage or your asset library.
+
+---
+
+# Webhooks
+
+> Receive finished tasks at your own URL, verify the signature, and handle retries and duplicates.
+
+Online version: <https://popnow.ai/docs/webhooks>
+
+A webhook lets PopNow tell you when a task is done, so you do not have to keep asking. There are two kinds:
+
+|           | Task callback                      | Account endpoint                                            |
+| --------- | ---------------------------------- | ----------------------------------------------------------- |
+| Set up    | `callBackUrl` on each `createTask` | Once, in the API console                                    |
+| Sent for  | That one task                      | Every task on the account that matches the events you chose |
+| Signature | `X-Webhook-Signature` (below)      | Standard Webhooks headers ([see below](#account-endpoints)) |
+
+Most integrations only need the task callback.
+
+## 1. Get your signing secret
+
+Every delivery is signed with your account's webhook signing secret. Open the **Webhooks** page of the [API console](https://popnow.ai/api/console/webhooks), generate (or rotate) the secret and store it on your server as `POPNOW_WEBHOOK_SECRET`. It is shown only once. Rotating takes effect immediately, including for deliveries still being retried, so update your receivers right after.
+
+## 2. Pass `callBackUrl`
+
+```json
+{
+  "model": "alibaba/wan-3.0/image-to-video",
+  "input": { "image_url": "https://media.popnow.ai/movie/lighthouse.webp" },
+  "callBackUrl": "https://your-app.example.com/hooks/popnow"
+}
+```
+
+The URL must be public **HTTPS** on port 443 (or no port), without a username or password, and resolve only to public addresses — checked when you create the task and again when we connect. `http://localhost` cannot work; use a tunnel such as ngrok while developing, or poll. An invalid URL returns `400` with `msg: "Invalid callback URL"`.
+
+## 3. What arrives
+
+When the task reaches a final state, PopNow sends one `POST`:
+
+```http
+POST /hooks/popnow HTTP/1.1
+Content-Type: application/json
+User-Agent: PopNow-Webhook/1
+X-Webhook-Timestamp: 1787045531
+X-Webhook-Signature: 9tXk3…=
+X-Webhook-Payload-Version: 2
+```
+
+The body is exactly what `recordInfo` would return for the task:
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
+    "model": "alibaba/wan-3.0/image-to-video",
+    "state": "succeeded",
+    "output": { "assets": [{ "url": "https://…", "mime": "video/mp4", "durationSeconds": 5 }] },
+    "credits": 34,
+    "cost": "0.34",
+    "settled": true
+  },
+  "request_id": "whd_01JH8Z…"
+}
+```
+
+* `code` is `200` even for a failed task: it describes the delivery, not the task. Read `data.state`.
+* `request_id` is the **delivery ID**. It stays the same across retries, so use it to ignore duplicates.
+* The signed links in `output` expire after about 20 minutes. Store the `taskId`, not the link.
+
+## 4. Verify the signature
+
+```text
+signature = base64( HMAC-SHA256( secret, "<taskId>.<timestamp>.<sha256_hex(raw_body)>" ) )
+```
+
+`taskId` is `data.taskId` from the body, `timestamp` is the `X-Webhook-Timestamp` header, and the last part is the SHA-256 of the **raw** request body in lowercase hex. Hash the bytes you received, not a re-serialised object: key order and whitespace would change the result.
+
+```javascript title="Node.js (Express)"
+import crypto from 'node:crypto';
+import express from 'express';
+
+const app = express();
+const SECRET = process.env.POPNOW_WEBHOOK_SECRET;
+
+// express.raw keeps the exact bytes; express.json would throw them away.
+app.post('/hooks/popnow', express.raw({ type: 'application/json', limit: '10mb' }), (req, res) => {
+  const ts = Number(req.headers['x-webhook-timestamp']);
+  const sig = String(req.headers['x-webhook-signature'] ?? '');
+  // Refuse anything older than five minutes, however valid its signature.
+  if (!Number.isInteger(ts) || Math.abs(Date.now() / 1000 - ts) > 300) return res.status(401).end();
+
+  let event;
+  try { event = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).end(); }
+  const digest = crypto.createHash('sha256').update(req.body).digest('hex');
+  const expected = crypto.createHmac('sha256', SECRET)
+    .update(`${event.data?.taskId}.${ts}.${digest}`).digest('base64');
+  const ok = expected.length === sig.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
+  if (!ok) return res.status(401).end();
+
+  res.status(200).end();          // acknowledge first…
+  enqueue(event.request_id, event.data); // …then do the work
+});
+```
+
+```python title="Python (Flask)"
+import hashlib, hmac, base64, json, os, time
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+SECRET = os.environ["POPNOW_WEBHOOK_SECRET"].encode()
+
+@app.post("/hooks/popnow")
+def popnow_hook():
+    raw = request.get_data()  # the exact bytes
+    ts = request.headers.get("X-Webhook-Timestamp", "")
+    sig = request.headers.get("X-Webhook-Signature", "")
+    if not ts.isdigit() or abs(time.time() - int(ts)) > 300:
+        abort(401)
+    event = json.loads(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    message = f'{event["data"]["taskId"]}.{ts}.{digest}'.encode()
+    expected = base64.b64encode(hmac.new(SECRET, message, hashlib.sha256).digest()).decode()
+    if not hmac.compare_digest(expected, sig):
+        abort(401)
+    enqueue(event["request_id"], event["data"])  # do the slow work elsewhere
+    return "", 200
+```
+
+`X-Webhook-Payload-Version` is `2` for every new integration. Version `1` is an older format kept for existing receivers; if you ever see it, the task ID is the top-level `task_id`.
+
+## Respond quickly
+
+Any **2xx** within 15 seconds counts as received. Anything else — another status, a timeout, a refused connection — is retried. Acknowledge first and do the slow work (downloading, transcoding, notifying users) in a background job.
+
+## Retries and duplicates
+
+A failed delivery is retried 7 more times, after 10 s, 30 s, 2 min, 10 min, 30 min, 2 h and 6 h. Each retry is signed again with a fresh timestamp, so always check the timestamp against the current time rather than the first attempt. After the last retry the delivery is marked failed in the API console, where you can send it again by hand.
+
+The same task can therefore arrive more than once. Make your handler idempotent: store `request_id` with a unique index, and when you see one again, answer `200` and do nothing.
+
+If your server was down for longer than the retry window, list recent tasks with [`GET /api/v1/jobs`](tasks.md#the-task-list) and read any you missed with `recordInfo`.
+
+## Account endpoints
+
+An account endpoint is a URL registered once in the API console together with the events it wants. It receives events for every task on the account, so you never pass `callBackUrl` again.
+
+| Event            | Sent when                                                                   |
+| ---------------- | --------------------------------------------------------------------------- |
+| `task.completed` | Any of the four below. Subscribe to this unless you need to tell them apart |
+| `task.succeeded` | A task finished successfully                                                |
+| `task.failed`    | A task failed; the hold was released                                        |
+| `task.expired`   | A task passed its deadline; the hold was released                           |
+| `task.canceled`  | Kept for old records only                                                   |
+
+Deliveries follow the [Standard Webhooks](https://www.standardwebhooks.com/) format, so off-the-shelf libraries work:
+
+```text
+webhook-id: msg_01k3m8x9q2z4v7n5p6r8s0t1w3
+webhook-timestamp: 1787045531
+webhook-signature: v1,base64( HMAC-SHA256( key, "<webhook-id>.<webhook-timestamp>.<raw_body>" ) )
+```
+
+Two differences from the task callback: the **body itself** is signed (no SHA-256 step), and the HMAC key is the Base64-decoded part of the secret after `whsec_` — not the secret string. During a secret rotation the header can hold two space-separated signatures; accept the request if either matches. `webhook-id` stays the same across retries: use it to ignore duplicates. The event's `data.object` is the task record at the moment the event was created.
+
+With an off-the-shelf Standard Webhooks library the check is one call:
+
+```python title="Python (pip install standardwebhooks)"
+import os
+from flask import Flask, request
+from standardwebhooks.webhooks import Webhook
+
+app = Flask(__name__)
+wh = Webhook(os.environ["POPNOW_ENDPOINT_SECRET"])  # the whsec_… secret of this endpoint
+
+@app.post("/hooks/popnow-events")
+def events():
+    event = wh.verify(request.get_data(), dict(request.headers))  # raises if the signature is wrong
+    task = event["data"]["object"]
+    print(event["type"], task["taskId"], task["state"])
+    return "", 200
+```
+
+```javascript title="Node.js (npm install standardwebhooks)"
+import express from 'express';
+import { Webhook } from 'standardwebhooks';
+
+const wh = new Webhook(process.env.POPNOW_ENDPOINT_SECRET);
+const app = express();
+app.post('/hooks/popnow-events', express.raw({ type: 'application/json' }), (req, res) => {
+  let event;
+  try { event = wh.verify(req.body.toString('utf8'), req.headers); } catch { return res.status(401).end(); }
+  res.status(200).end();
+  console.log(event.type, event.data.object.taskId, event.data.object.state);
+});
+app.listen(3000);
+```
+
+### Manage endpoints in the console
+
+The **Webhooks** page of the [API console](https://popnow.ai/api/console/webhooks) holds both kinds of setup:
+
+* **Endpoints:** up to 16 per account, each with its own URL, description, event list and `whsec_` secret. Rotate a secret at any time; for a grace period you choose (up to 7 days) both the old and the new secret sign each delivery, so receivers can switch without dropping events. Account endpoint deliveries carry `User-Agent: PopNow-Webhook/2`.
+* **Deliveries:** every attempt for both kinds, with the HTTP status your server returned and when the next retry is due. A delivery that used up its retries can be sent again by hand.
+* **Signing secret** for task callbacks (`POPNOW_WEBHOOK_SECRET`), generated and rotated on the same page.
+
+## Task states in a webhook
+
+A webhook only fires when a task reaches a **final** state; `queued` and `running` are never delivered.
+
+| `data.state` | Meaning                                                                    | Credits                            |
+| ------------ | -------------------------------------------------------------------------- | ---------------------------------- |
+| `succeeded`  | Files are in `output.assets`                                               | The actual price, at most the hold |
+| `failed`     | The model could not finish or declined the request; `errorCode` says which | Nothing; the hold is released      |
+| `expired`    | The task passed its deadline                                               | Nothing; the hold is released      |
+
+`canceled` exists only on old records. The full lifecycle, `wait` and polling are on [Tasks](tasks.md#states); refunds of failed tasks are on [Credits and refunds](https://popnow.ai/docs/credits-and-refunds#failed-tasks).
+
+## Troubleshooting
+
+| Symptom                                      | Likely cause                                                                   | Fix                                                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `400` “Invalid callback URL” on `createTask` | `http://`, a port other than 443, credentials in the URL, or a private address | Use a public HTTPS URL; tunnel while developing                                                      |
+| Nothing arrives                              | Your server returned non-2xx or timed out; deliveries are still being retried  | Check the delivery log in the console; answer within 15 seconds                                      |
+| Signature never matches                      | You hashed parsed JSON instead of the raw bytes, or used the wrong secret      | Keep the raw body (`express.raw`, `request.get_data()`), and use the secret for this kind of webhook |
+| Signature stopped matching today             | The secret was rotated                                                         | Update `POPNOW_WEBHOOK_SECRET` or the endpoint secret on your server                                 |
+| The same task arrives twice                  | A retry after a slow or failed acknowledgement                                 | Store `request_id` (task callback) or `webhook-id` (endpoint) and ignore repeats                     |
+| The file link in the body returns `403`      | Signed links last about 20 minutes                                             | Read the task again with `recordInfo` for a fresh link                                               |
+
+### Do I need webhooks, or can I poll?
+
+Either works. Polling recordInfo every few seconds is fine for scripts; webhooks are better for production because you hear about every task without keeping connections open.
+
+### Which secret signs which webhook?
+
+Task callbacks set with callBackUrl are signed with the account's webhook signing secret. Account endpoints each have their own whsec\_ secret and use the Standard Webhooks format.
+
+### How long does PopNow retry a failed delivery?
+
+Seven retries over about nine hours: after 10 seconds, 30 seconds, 2 minutes, 10 minutes, 30 minutes, 2 hours and 6 hours. After that the delivery can be resent by hand from the console.
+
+### Do webhooks cost credits?
+
+No. Deliveries, retries and reading tasks are free; only the generation itself is charged.
+
+---
+
+# Idempotency
+
+> Retry after a timeout without generating twice or paying twice.
+
+Online version: <https://popnow.ai/docs/idempotency>
+
+An **idempotency key** is a label you attach to one piece of work, such as "render the video for order 8814". If the same labelled request reaches PopNow twice, the work is done once.
+
+```http
+POST /api/v1/jobs/createTask
+Idempotency-Key: order-8814-render-1
+```
+
+## Why you want it
+
+A timeout leaves you guessing: maybe the request never arrived, maybe it arrived and only the answer was lost. Without a key, you either give up (and the user waits for nothing) or retry (and maybe generate and pay twice). With a key, retrying is always safe: you get either a new task or the one created a moment ago.
+
+## How it behaves
+
+* A repeat with the same key, from the same API key, returns **the original task** in its current state — no second task, no second hold, no second charge.
+* The key is tied to what you sent: `model`, the whole `input` and `callBackUrl`. Field order and whitespace do not matter, but any real change does. A changed request with an old key returns `409`; give it a new key.
+* A key is remembered for **24 hours** from first use. After that the same key creates a new, billed task, so stop automatic retries well before then.
+* Keys are up to 128 characters and only need to be unique within your account. Another API key on your account cannot reuse one: it gets `409` without the original task ID.
+
+| Endpoint                       | A repeat with the same key…                                                |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `POST /api/v1/jobs/createTask` | returns the original task                                                  |
+| `POST /api/v1/jobs/retry`      | returns the task that retry created (the key is scoped to the source task) |
+| `POST /v1/videos`              | returns the original task                                                  |
+| `POST /api/v1/assets`          | returns the asset already saved (the header is required here)              |
+
+Read endpoints and upload/download link endpoints ignore the header. `jobs/purge` needs none: repeating it is already harmless.
+
+## Choosing keys
+
+* **One key per piece of work**, not per HTTP attempt. Every retry must reuse it.
+* Derive it from something you already store: `order-8814-render-1` can be recomputed after a crash; a random UUID cannot unless you save it first.
+* If you use a UUID, generate it **before** the first attempt and keep it next to the job it belongs to.
+
+> **Never generate the key inside the retry loop**
+>
+> ```javascript
+> // Wrong: a new key per attempt defeats the whole mechanism
+> for (let i = 0; i < 3; i++) await createTask(body, crypto.randomUUID());
+>
+> // Right: one key, created once
+> const key = crypto.randomUUID();
+> for (let i = 0; i < 3; i++) await createTask(body, key);
+> ```
+
+## Conflicts
+
+All of these return `code: 409`:
+
+| What happened                                             | Retry?                                                                 |
+| --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Two requests with the same key arrived at the same moment | Yes — wait a few hundred milliseconds and resend with the **same** key |
+| The key was already used for a different request          | No — the request changed, so it needs a new key                        |
+| Another API key on your account already used this key     | No — retry with the API key that made the first attempt                |
+
+Your code should not branch on `msg`, so allow one or two `409` retries and then surface the error to a person.
+
+## Full example
+
+```javascript title="JavaScript"
+const RETRYABLE = new Set([429, 500, 503, 50301]); // business codes from the body
+
+async function createTaskOnce(body, idempotencyKey) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch('https://api.popnow.ai/api/v1/jobs/createTask', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.POPNOW_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (json.code === 200) return json.data; // a new task, or the original one
+      if (!RETRYABLE.has(json.code)) throw new Error(`${json.code} ${json.msg} (${json.request_id})`);
+    } catch (err) {
+      if (!(err instanceof TypeError)) throw err; // network error: safe to retry with the same key
+    }
+    await new Promise((r) => setTimeout(r, 2 ** attempt * 500 + Math.random() * 300));
+  }
+  throw new Error('createTask did not succeed after 4 attempts');
+}
+
+const task = await createTaskOnce(
+  { model: 'alibaba/z-image-turbo/text-to-image', input: { prompt: 'A paper boat on a calm lake' } },
+  'order-8814-render-1',
+);
+```
+
+---
+
+# Errors
+
+> Every business code, what it means, and which errors are worth retrying.
+
+Online version: <https://popnow.ai/docs/errors>
+
+When a call goes wrong, the response gives you a **number** (`code`) that says what kind of problem it is and a **sentence** (`msg`) for a person to read. Branch on the number; show or log the sentence.
+
+## The envelope
+
+```json
+{ "code": 40201, "msg": "Insufficient balance", "request_id": "req_…" }
+```
+
+* `code` is a business code. `200` means success; everything else is listed below.
+* On failure there is no `data` field, except on a few [asset library](assets.md#errors) errors and on prompts or input images declined by the content check at submission (`400`, nothing charged); both add a machine-readable `data.reason`.
+* The HTTP status is set too (`40201` comes with HTTP `402`). Branch on one of the two, not a mix — we recommend `code`, which is more specific.
+* `request_id` is also in the `X-Request-Id` header. Include it when you contact support.
+
+If a response is not JSON at all — an HTML or plain-text page from the network in between — handle it by HTTP status and log the first part of the body.
+
+## Error message language
+
+`msg` and a failed task's `errorMessage` are English by default. Send `Accept-Language` with one of `en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `de`, `fr`, `es`, `pt-BR`, `ru`, `it` or `pl`, or set the API error language in the console, to get them in that language; other languages fall back to English. Error responses carry `Content-Language`. Codes never change with the language — another reason never to parse `msg`.
+
+When a model reports a specific reason for failing (for example an unreadable reference image), `errorMessage` passes that reason on in English, with internal details removed.
+
+## General codes
+
+| `code`  | HTTP      | Meaning                                                                          | Retry?                                   |
+| ------- | --------- | -------------------------------------------------------------------------------- | ---------------------------------------- |
+| `200`   | 200 / 202 | Success                                                                          | —                                        |
+| `400`   | 400       | The request or its `input` is invalid; `msg` names the problem                   | No — fix it                              |
+| `40003` | 400       | An upload does not match its ticket (size, type or content)                      | No — new ticket, upload again            |
+| `40004` | 400       | Valid request, but the model cannot serve this combination of settings right now | No — change the setting named in `msg`   |
+| `401`   | 401       | Missing, unknown or revoked key ([details](authentication.md#what-a-failure-looks-like))         | No                                       |
+| `403`   | 403       | Not allowed (see [Permissions](#permissions))                                    | No                                       |
+| `404`   | 404       | Does not exist, or belongs to another key                                        | No                                       |
+| `409`   | 409       | Conflicts with the current state ([when to retry](#when-409-is-worth-retrying))                   | Sometimes                                |
+| `40901` | 409       | A quote expired or the price changed                                             | Quote again                              |
+| `413`   | 413       | Request body too large                                                           | No — upload media instead of inlining it |
+| `429`   | 429       | Too many requests                                                                | Yes — after `Retry-After`                |
+| `500`   | 500       | Something broke on our side                                                      | Yes — with backoff                       |
+| `503`   | 503       | A supporting service is briefly unavailable                                      | Yes — after `Retry-After`                |
+
+## Balance and caps
+
+| `code`  | HTTP | Meaning                                 | What to do                                                |
+| ------- | ---- | --------------------------------------- | --------------------------------------------------------- |
+| `40201` | 402  | Not enough credits for this task's hold | [Buy credits](https://popnow.ai/pricing), then send again |
+| `40202` | 402  | A key spend cap was reached             | Raise the cap in the API console, or wait for it to reset |
+
+## Permissions
+
+| `code`  | HTTP | Meaning                                                     | What to do                                                                   |
+| ------- | ---- | ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `40301` | 403  | This key may not call this model                            | Add the model to the key's allowed list                                      |
+| `40302` | 403  | Request came from an address outside the key's IP allowlist | Add the address or remove the restriction                                    |
+| `40303` | 403  | The service is not offered in this region                   | Cannot be worked around                                                      |
+| `40310` | 403  | The account's email address is not verified yet             | Open the link in your sign-up email; the key works as soon as it is verified |
+
+A plain `403` with a valid key means the account cannot use the API right now; contact support with the `request_id`.
+
+## Model availability
+
+| `code`  | HTTP | Meaning                                      | Retry?                               |
+| ------- | ---- | -------------------------------------------- | ------------------------------------ |
+| `50301` | 503  | The model cannot take tasks right now        | Yes, later — or choose another model |
+| `40004` | 400  | The model works, but not with these settings | No — change the setting              |
+
+Neither creates a task or holds credits.
+
+## Task failure codes
+
+A task that was accepted and then failed has `state: "failed"` and one of these in `errorCode`. The list is closed: treat any other value as `upstream_failed`.
+
+| `errorCode`               | Meaning                                                      | Retry?                                           |
+| ------------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| `invalid_request`         | The model did not accept the parameters                      | No — fix them                                    |
+| `unsupported_combination` | This combination of settings is not supported right now      | No — change a setting                            |
+| `content_rejected`        | The model declined this content                              | No — change the prompt or the reference          |
+| `invalid_asset`           | A reference file could not be read or is no longer available | Upload it again and create a new task            |
+| `rate_limited`            | The generation service was busy                              | Yes, with backoff                                |
+| `upstream_unavailable`    | Generation is temporarily unavailable                        | Yes, shortly                                     |
+| `generation_failed`       | Generation ran but produced nothing                          | Maybe — the same input often fails the same way  |
+| `timeout`                 | The task ran out of time                                     | Maybe — try a shorter or lower-resolution output |
+| `upstream_failed`         | Anything else                                                | Yes, with backoff                                |
+
+A failed task releases its hold, so it costs nothing (a few models charge for content refusals, and say so on their page). `errorMessage` explains the reason in words; branch on `errorCode` only.
+
+## When `409` is worth retrying
+
+| Case                                                                     | Retry?                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------- |
+| Two requests with the same `Idempotency-Key` arrived together            | Yes, with the same key, after a short pause |
+| The `Idempotency-Key` was used for a different request or by another key | No                                          |
+| An upload or an output is still being processed                          | Yes, after a few seconds                    |
+| `jobs/retry` on a task that has not finished yet                         | Yes, once it is final                       |
+| `jobs/retry` on a task that succeeded                                    | No — create a new task                      |
+| An upload ticket or uploaded file has expired                            | No — upload again                           |
+
+## Writing the retry
+
+Retry only what can succeed on a second try, wait for `Retry-After` when it is given, and back off exponentially otherwise:
+
+```javascript title="JavaScript"
+const RETRYABLE = new Set([429, 500, 503, 50301]);
+
+async function call(path, init, attempts = 4) {
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(`https://api.popnow.ai/api/v1${path}`, init);
+    if (!res.headers.get('content-type')?.includes('json')) {
+      throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+    const body = await res.json();
+    if (body.code === 200) return body.data;
+    if (!RETRYABLE.has(body.code)) throw new Error(`${body.code} ${body.msg} (${body.request_id})`);
+    const wait = Number(res.headers.get('retry-after')) * 1000 || 2 ** i * 1000 + Math.random() * 500;
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  throw new Error('out of retries');
+}
+```
+
+```python title="Python"
+import random, time, requests
+
+RETRYABLE = {429, 500, 503, 50301}
+
+def call(method, path, attempts=4, **kwargs):
+    for i in range(attempts):
+        res = requests.request(method, f"https://api.popnow.ai/api/v1{path}", timeout=60, **kwargs)
+        try:
+            body = res.json()
+        except ValueError:
+            raise RuntimeError(f"HTTP {res.status_code}: {res.text[:200]}")
+        if body["code"] == 200:
+            return body["data"]
+        if body["code"] not in RETRYABLE:
+            raise RuntimeError(f'{body["code"]} {body["msg"]} ({body.get("request_id")})')
+        retry_after = res.headers.get("retry-after")
+        time.sleep(float(retry_after) if retry_after else 2**i + random.random() / 2)
+    raise RuntimeError("out of retries")
+```
+
+When retrying `createTask`, always send the **same** `Idempotency-Key`, so a request that actually succeeded is not run and charged twice.
+
+## Debugging
+
+1. Note the `request_id` and the `code`.
+2. Look the task up in the API console's logs, by task ID or `request_id`.
+3. Still stuck? [Contact support](https://popnow.ai/contact) with the `request_id`, the time (UTC) and the `code`. Never send your API key.
+
+---
+
+# Rate limits
+
+> How many requests you can send, what happens when you send more, and the other limits worth knowing.
+
+Online version: <https://popnow.ai/docs/limits>
+
+Limits protect everyone sharing the service. The defaults are generous for normal use; if you hit one, the response tells you exactly how long to wait.
+
+## At a glance
+
+| Limit                                                         | Default                                                             | When you hit it          |
+| ------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------ |
+| Writes per account (`createTask`, `retry`, uploads …)         | 1,000 per 10 seconds                                                | `429` with `Retry-After` |
+| Reads per account (`recordInfo`, `models`, `jobs`, `quote` …) | 1,000 per 10 seconds                                                | `429` with `Retry-After` |
+| Upload tickets                                                | 1,000 per 10 seconds, on top of writes                              | `429` with `Retry-After` |
+| Usage report (`/api/v1/usage`)                                | 30 per minute per account                                           | `429` with `Retry-After` |
+| Asset library                                                 | 60 reads and 30 saves per minute, plus a daily number of new assets | `429` with `Retry-After` |
+| Any request, before the key is checked                        | 6,000 per minute per network                                        | `429`                    |
+| Request body                                                  | 2 MiB of JSON                                                       | `413`                    |
+| Balance                                                       | What is in your account                                             | `40201`                  |
+| Key spend caps                                                | None unless you set one                                             | `40202`                  |
+
+Limits count per **account**, not per key — creating more keys does not raise them.
+
+## Response headers
+
+| Header                  | Meaning                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `X-RateLimit-Limit`     | Your allowance for the current window                                              |
+| `X-RateLimit-Remaining` | Requests left in it — sent on successful responses too, so you can slow down early |
+| `Retry-After`           | On `429`: seconds to wait before trying again                                      |
+
+The numbers above are defaults and can change; trust the headers rather than hard-coding them.
+
+## What a limit looks like
+
+```json
+{ "code": 429, "msg": "Too many requests. Retry in a moment", "request_id": "req_…" }
+```
+
+A request over the limit is rejected immediately — not queued — and costs nothing.
+
+## Handling it
+
+* Wait at least `Retry-After` seconds, then retry. Add a little random jitter so a batch of clients does not come back at the same instant.
+* When you retry `createTask`, send the **same** `Idempotency-Key` ([Idempotency](idempotency.md)).
+* Poll gently: every few seconds for images, every 10–15 seconds for video. Better still, use [webhooks](webhooks.md) — they cost no requests at all.
+
+## Running many tasks at once
+
+Rate limits cap how fast you **send** requests, not how many tasks run at the same time. You can have many tasks in flight; long video jobs simply take longer. If you need to start thousands of tasks, spread them out and let webhooks bring the results back.
+
+Need a higher allowance for a launch or a large batch? [Contact us](https://popnow.ai/contact) with your expected volume.
+
+---
+
+# Assets and LoRA files
+
+> Keep files in your asset library and reuse them by URI, read your characters, and bring your own LoRA weights.
+
+Online version: <https://popnow.ai/docs/assets>
+
+Uploads and task results are temporary. When you want to reuse a file across many tasks — a product photo, a character's face, a voice sample — save it to your **asset library**. When a model accepts custom style weights, bring your own **LoRA** file.
+
+## The asset library
+
+A saved asset gets a stable URI, `popnow://a/ast_…`, that you can put in any matching media field of any model, for as long as you keep the asset:
+
+```json
+{ "model": "google/nano-banana-2.1/edit",
+  "input": { "prompt": "Put this mug on a wooden café table, morning light",
+             "image_urls": ["popnow://a/ast_01k3m8x9q2z4v7n5p6r8s0t1w3"] } }
+```
+
+The URI is a reference, not a download link: it only works in generation requests made with keys on your account. Assets stay until you delete them.
+
+### Save a file
+
+`POST /api/v1/assets` copies a file into the library. Choose one source; the `Idempotency-Key` header is required, and saving the same source again returns the existing asset.
+
+| `source`      | Also send                                  | Saves                                                                               |
+| ------------- | ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `task_output` | `taskId` and the output's `key` or `index` | A file one of your succeeded tasks produced                                         |
+| `upload`      | `fileId`                                   | A committed [upload](media.md#upload-a-file)                                            |
+| `url`         | `url`                                      | A public `http`/`https` file (JPEG, PNG, WebP, GIF, MP4, WebM, MP3, WAV, FLAC, Ogg) |
+
+```bash
+curl -X POST "https://api.popnow.ai/api/v1/assets" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: save-$TASK_ID-0" \
+  -d "{\"source\": \"task_output\", \"taskId\": \"$TASK_ID\", \"index\": 0, \"name\": \"Hero shot\"}"
+```
+
+The response is the asset: `id`, `uri`, `name`, `kind` (`image`, `video` or `audio`), size and dimensions, the `model` that generated it, and a private `previewUrl` valid for about 20 minutes. Store the `uri`, never the preview link.
+
+### List, rename and delete
+
+| Call                          | Does                                                                                                                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/assets`          | One page of assets. Filter with `kind`, `source`, `favorite`, `q` (name search), `collectionId`, `entityId`; sort with `sort=recent\|oldest\|name\|size`; continue with `cursor` |
+| `GET /api/v1/assets/{id}`     | One asset with a fresh preview link                                                                                                                                              |
+| `PATCH /api/v1/assets/{id}`   | Change `name` and/or `favorite`                                                                                                                                                  |
+| `DELETE /api/v1/assets/{id}`  | Delete it; its URI stops working in new requests                                                                                                                                 |
+| `GET /api/v1/assets/entities` | Your characters: named sets of images arranged in the website, each image with its own URI                                                                                       |
+| `GET /api/v1/assets/usage`    | Your storage plan, what you use, its limits and what the next plan unlocks                                                                                                       |
+
+### Storage plans
+
+Storage opens with your first credit purchase and grows with what you have bought over time; it never shrinks, and saved assets always stay usable. `GET /api/v1/assets/usage` shows the numbers for your account.
+
+### Errors
+
+Asset library errors add a machine-readable `data.reason` to the usual envelope:
+
+| `data.reason`          | HTTP | Meaning                                                                      |
+| ---------------------- | ---- | ---------------------------------------------------------------------------- |
+| `asset_library_locked` | 400  | The library opens after your first credit purchase                           |
+| `asset_library_full`   | 400  | Your plan's space or item count is used up — delete assets or move up a plan |
+| `asset_file_too_large` | 400  | The file is above your plan's per-file limit                                 |
+| `asset_daily_limit`    | 429  | Today's number of new assets is reached; wait for `Retry-After` (00:00 UTC)  |
+| `asset_storage_full`   | 503  | Storage is temporarily full on our side; try again later                     |
+
+Treat a reason you do not recognise like an absent one. Reading the library is limited to 60 requests per minute and saving to 30 per minute.
+
+## Bring your own LoRA
+
+Models whose ID ends in `-lora` accept a `loras` array — up to three weights files, each with a `path` and a `scale` (0 to 4):
+
+```json
+{ "model": "alibaba/qwen-image-2.1-lora/text-to-image",
+  "input": { "prompt": "A cozy reading nook in watercolor style",
+             "loras": [{ "path": "popnow://f/fil_01k3m8x9q2z4v7n5p6r8s0t1w3", "scale": 1 }] } }
+```
+
+`path` can be a public direct link to a `.safetensors` file, or a file you uploaded or imported:
+
+* **Upload** it like any other file with `contentType: application/octet-stream` (a `.safetensors` file up to 2 GiB; the ticket is valid for two hours). Commit checks that it is a complete safetensors file.
+* **Import it from a link** when the file needs a sign-in, for example a private Hugging Face repository:
+
+```bash
+curl -X POST "https://api.popnow.ai/api/v1/files/import" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "your-name/your-lora-repo", "token": "hf_..."}'
+```
+
+`url` accepts a Hugging Face repo ID (`owner/repo`, when it holds exactly one `.safetensors` file), a Hugging Face repo or file page, or any direct HTTPS link. `token` is optional — a Hugging Face access token or a Civitai API key — and is used only for this one download, never stored. The response matches a [commit](media.md#commit): put its `uri` in `loras[].path`.
+
+A LoRA must match the base model it was trained for; weights for a different base usually fail or have no effect. You are responsible for having the right to use the weights you bring.
+
+---
+
+# Production checklist
+
+> What to check before real users depend on your integration — keys, retries, webhooks, storage, costs and monitoring.
+
+Online version: <https://popnow.ai/docs/production-integration>
+
+A demo needs one request. A product needs to survive timeouts, duplicate webhooks, expired links and a key that leaks. Go through this list before launch.
+
+## Keys
+
+* [ ] The key lives in your server's secret store, never in a browser or app bundle.
+* [ ] Each environment and each service has its own key, so one can be revoked alone.
+* [ ] Production keys are limited to the models you use and have a daily spend cap.
+* [ ] You know how to rotate a key without downtime ([Authentication](authentication.md#rotation)).
+
+## Creating tasks
+
+* [ ] Every `createTask` sends an `Idempotency-Key` derived from your own job ID, generated once, reused on every retry.
+* [ ] Only `429`, `500`, `503` and `50301` are retried, with backoff and `Retry-After` ([Errors](errors.md#writing-the-retry)).
+* [ ] `400`, `40004` and other "fix the request" errors are shown or logged, not retried.
+* [ ] If you show prices, you quote first and pass `quoteId` and `expectedCredits`, and handle `40901`.
+* [ ] A low balance (`40201`) reaches a person — an alert, an email, a banner — before users notice.
+
+## Getting results
+
+* [ ] Tasks carry a `callBackUrl`; your endpoint verifies the signature and rejects stale timestamps.
+* [ ] The webhook handler answers `2xx` quickly and does the work in the background.
+* [ ] Duplicate deliveries are ignored by `request_id`.
+* [ ] A periodic sweep reads tasks whose webhook never arrived.
+* [ ] Your code treats any state other than `succeeded`, `failed`, `expired` and `canceled` as "still running".
+
+## Files
+
+* [ ] Finished files are copied into your own storage (or your asset library) instead of linking to the signed URL, which expires in about 20 minutes.
+* [ ] You store `taskId`s, not signed links.
+* [ ] Your download code does not send the API key to the signed URL.
+* [ ] Reference files are public HTTPS links to the file itself, uploads, or assets — not share pages.
+
+## Costs
+
+* [ ] You know each model's price unit (per image, per second, per request) and the settings that raise it.
+* [ ] Previews and tests use the cheapest resolution and shortest duration.
+* [ ] A spend cap stops runaway loops before they empty the balance.
+* [ ] You check `credits` and `settled` rather than assuming the estimate was charged.
+
+## Monitoring
+
+* [ ] You log `request_id`, `taskId`, `code` and `errorCode` for every failure.
+* [ ] You watch the share of `failed` tasks per model; a sudden rise usually means a prompt, input or model change.
+* [ ] You track time from `createTask` to the webhook per model, and alert on outliers.
+* [ ] Someone on your team knows where the API console's logs and usage pages are.
+
+## Content
+
+PopNow is a general-audience service. Models apply their own content rules, and requests they decline fail with `content_rejected`. If your users write prompts, tell them in your own interface why a request was declined instead of showing a raw error, and let them change it.
+
+---
+
+# Recipes
+
+> Copy-and-run Python and Node.js recipes for the PopNow AI image, video and text-to-speech API - batch images from a CSV, photo to video, voiceovers line by line, and a Slack alert when a video is ready.
+
+Online version: <https://popnow.ai/docs/recipes>
+
+Four small scripts for the jobs people automate first. Each one is complete: install `requests` (or use Node 18+), set `POPNOW_API_KEY`, run it. They share the same three helpers (call, wait, save), so once you have read one, the others are a few lines each. The [Recipes page on popnow.ai](https://popnow.ai/api/workflows) builds the same scripts for any model you pick.
+
+| Recipe                                       | Model                                        | Cost per item                     |
+| -------------------------------------------- | -------------------------------------------- | --------------------------------- |
+| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 2 credits per image               |
+| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 28 credits for 5 s at 768p        |
+| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 1 credit per 20 s of speech |
+| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 28 credits for 5 s at 768p        |
+
+Swap the model for any other on [Models](https://popnow.ai/docs/models); keep the `input` fields to the ones that model's schema lists.
+
+## The helpers
+
+Every Python recipe ends with these. `create` sends a task with an idempotency key, `wait` polls with backoff until the task is final and its files are copied, `save` downloads the first file.
+
+```python title="helpers.py"
+import os, time
+import requests
+
+BASE = "https://api.popnow.ai/api/v1"
+HEADERS = {"Authorization": f"Bearer {os.environ['POPNOW_API_KEY']}"}
+
+def call(method, path, **kwargs):
+    headers = {**HEADERS, **kwargs.pop("headers", {})}
+    body = requests.request(method, BASE + path, headers=headers, timeout=60, **kwargs).json()
+    if body["code"] != 200:
+        raise RuntimeError(f'{body["code"]} {body["msg"]}')
+    return body["data"]
+
+def create(payload, key):
+    return call("POST", "/jobs/createTask", json=payload, headers={"Idempotency-Key": key})["taskId"]
+
+def wait(task_id):
+    delay = 2.0
+    while True:
+        time.sleep(delay)
+        task = call("GET", "/jobs/recordInfo", params={"taskId": task_id})
+        assets = (task.get("output") or {}).get("assets") or []
+        copying = any(a.get("pending") and not a.get("unavailable") for a in assets)
+        if task["state"] in ("succeeded", "failed", "canceled", "expired") and not copying:
+            return task
+        delay = min(delay * 1.5, 15.0)
+
+def save(task, path):
+    if task["state"] != "succeeded":
+        raise RuntimeError(f'{task["state"]}: {task.get("errorMessage", "no detail")}')
+    url = task["output"]["assets"][0]["url"]
+    with open(path, "wb") as f:
+        f.write(requests.get(url, timeout=300).content)
+```
+
+## Batch images from a CSV
+
+`prompts.csv` has a `prompt` column; each row becomes one image in `out/`. All tasks are submitted first and collected afterwards, so they render in parallel. The idempotency key is derived from the row, so rerunning after a crash never pays twice for a row that already went through.
+
+```python title="batch_images.py"
+import csv, hashlib, pathlib
+from helpers import create, wait, save
+
+MODEL = "alibaba/z-image-turbo/text-to-image"
+
+out = pathlib.Path("out")
+out.mkdir(exist_ok=True)
+with open("prompts.csv", newline="", encoding="utf-8") as f:
+    rows = [r["prompt"] for r in csv.DictReader(f) if r.get("prompt")]
+
+tasks = []
+for i, prompt in enumerate(rows, start=1):
+    key = "batch-" + hashlib.sha256(f"{i}:{prompt}".encode()).hexdigest()[:32]
+    tasks.append((i, create({"model": MODEL, "input": {"prompt": prompt, "aspect_ratio": "1:1"}}, key)))
+
+for i, task_id in tasks:
+    save(wait(task_id), out / f"{i:03d}.png")
+    print("saved", i)
+```
+
+The same in Node.js 18+, without any package:
+
+```javascript title="batch_images.mjs"
+import { createHash } from 'node:crypto';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+
+const API = 'https://api.popnow.ai/api/v1';
+const auth = { Authorization: `Bearer ${process.env.POPNOW_API_KEY}` };
+const call = async (path, init = {}) => {
+  const body = await fetch(API + path, { ...init, headers: { ...auth, ...init.headers } }).then((r) => r.json());
+  if (body.code !== 200) throw new Error(`${body.code} ${body.msg}`);
+  return body.data;
+};
+
+const prompts = (await readFile('prompts.txt', 'utf8')).split('\n').map((l) => l.trim()).filter(Boolean);
+await mkdir('out', { recursive: true });
+
+const ids = await Promise.all(prompts.map((prompt, i) => call('/jobs/createTask', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'batch-' + createHash('sha256').update(`${i}:${prompt}`).digest('hex').slice(0, 32) },
+  body: JSON.stringify({ model: 'alibaba/z-image-turbo/text-to-image', input: { prompt, aspect_ratio: '1:1' } }),
+}).then((d) => d.taskId)));
+
+for (const [i, id] of ids.entries()) {
+  let task;
+  do {
+    await new Promise((r) => setTimeout(r, 3000));
+    task = await call(`/jobs/recordInfo?taskId=${id}`);
+  } while (task.state === 'queued' || task.state === 'running');
+  if (task.state !== 'succeeded') { console.error(i, task.state, task.errorMessage); continue; }
+  const file = await fetch(task.output.assets[0].url).then((r) => r.arrayBuffer());
+  await writeFile(`out/${String(i + 1).padStart(3, '0')}.png`, Buffer.from(file));
+}
+```
+
+## Photo to video
+
+Uploads a local photo, then asks an image-to-video model to bring it to life. Run it as `python photo_to_video.py photo.jpg`.
+
+```python title="photo_to_video.py"
+import mimetypes, sys, uuid
+import requests
+from helpers import call, create, wait, save
+
+MODEL = "minimax/h3/image-to-video"
+
+def upload(path):
+    """Local file -> popnow:// reference you can put in any image, video or audio field."""
+    data = open(path, "rb").read()
+    kind = mimetypes.guess_type(path)[0] or "image/jpeg"
+    ticket = call("POST", "/common/upload-url", json={"contentType": kind, "bytes": len(data)})
+    requests.put(ticket["uploadUrl"], data=data, headers=ticket.get("headers", {}), timeout=120).raise_for_status()
+    return call("POST", f'/files/{ticket["fileId"]}/commit')["uri"]
+
+ref = upload(sys.argv[1])
+task_input = {"image_url": ref, "prompt": "Gentle camera push-in, hair moving in the wind", "duration_seconds": 5, "resolution": "768p"}
+task_id = create({"model": MODEL, "input": task_input}, str(uuid.uuid4()))
+save(wait(task_id), "clip.mp4")
+print("saved clip.mp4")
+```
+
+Testing the request without code first:
+
+```bash
+curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"model": "minimax/h3/image-to-video", "input": {"image_url": "https://media.popnow.ai/movie/lighthouse.webp", "prompt": "The waves roll in slowly", "duration_seconds": 5}}'
+```
+
+## A voiceover per line
+
+`lines.txt` holds one line of script per line; each becomes its own audio file in `voice/`, all in the same voice. `voice_id` options include Kore, Puck, Charon and Aoede; the model's page lists them all, along with `style` and `accent`.
+
+```python title="voiceover.py"
+import hashlib, pathlib
+from helpers import create, wait, save
+
+MODEL = "google/gemini-3.8-flash-tts/text-to-speech"
+
+out = pathlib.Path("voice")
+out.mkdir(exist_ok=True)
+lines = [l.strip() for l in open("lines.txt", encoding="utf-8") if l.strip()]
+
+tasks = []
+for i, line in enumerate(lines, start=1):
+    key = "voice-" + hashlib.sha256(f"{i}:{line}".encode()).hexdigest()[:32]
+    tasks.append((i, create({"model": MODEL, "input": {"text": line, "voice_id": "Kore", "style": "empathetic"}}, key)))
+
+for i, task_id in tasks:
+    task = wait(task_id)
+    mime = ((task.get("output") or {}).get("assets") or [{}])[0].get("mime", "")
+    ext = {"audio/mpeg": ".mp3", "audio/wav": ".wav", "audio/ogg": ".ogg"}.get(mime, ".audio")
+    save(task, out / f"{i:03d}{ext}")
+    print("saved", i)
+```
+
+## Slack alert when a video is ready
+
+Instead of polling, pass `callBackUrl` when you create the task. A small Express server checks the signature on the raw body and posts the result to a Slack incoming webhook. Set `POPNOW_WEBHOOK_SECRET` (from the [API console](https://popnow.ai/api/console/webhooks)) and `SLACK_WEBHOOK_URL`.
+
+```javascript title="notify.mjs (npm install express)"
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import express from 'express';
+
+const BASE = 'https://api.popnow.ai/api/v1';
+
+// 1. Create the task with a callBackUrl that points at this server.
+export async function createVideo() {
+  const res = await fetch(BASE + '/jobs/createTask', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.POPNOW_API_KEY}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': randomUUID(),
+    },
+    body: JSON.stringify({
+      model: 'minimax/h3/image-to-video',
+      input: { image_url: 'https://media.popnow.ai/movie/lighthouse.webp', prompt: 'The waves roll in slowly', duration_seconds: 5 },
+      callBackUrl: 'https://your-server.example.com/hooks/popnow',
+    }),
+  });
+  return (await res.json()).data.taskId;
+}
+
+// 2. Receive the finished task, check the signature on the raw body, then post to Slack.
+const app = express();
+app.post('/hooks/popnow', express.raw({ type: 'application/json' }), async (req, res) => {
+  const timestamp = req.header('X-Webhook-Timestamp');
+  const signature = req.header('X-Webhook-Signature') ?? '';
+  const event = JSON.parse(req.body.toString('utf8'));
+  const task = event.data;
+  const digest = createHash('sha256').update(req.body).digest('hex');
+  const expected = createHmac('sha256', process.env.POPNOW_WEBHOOK_SECRET)
+    .update(`${task.taskId}.${timestamp}.${digest}`)
+    .digest('base64');
+  const ok = expected.length === signature.length && timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  if (!ok || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return res.status(401).end();
+  res.status(200).end(); // answer first; deliveries are retried until you return 2xx
+
+  const text = task.state === 'succeeded'
+    ? `Video ready: ${task.output.assets[0].url}`
+    : `Task ${task.taskId} ${task.state}: ${task.errorMessage ?? 'no detail'}`;
+  await fetch(process.env.SLACK_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+});
+app.listen(3000);
+```
+
+The link in the Slack message is signed and works for about 20 minutes; post the `taskId` too if people may open it later. [Webhooks](webhooks.md) covers retries and duplicate deliveries.
+
+## Pricing and limits
+
+Each recipe pays the model's normal price per item and nothing else; reading tasks and uploading files are free. Failed items cost nothing, and because each item has its own idempotency key, rerunning a script only creates the items that never went through. Before a large batch, price one item with [`jobs/quote`](https://popnow.ai/docs/billing#quote) and set a daily cap on the key ([Authentication](authentication.md)). Submitting hundreds of tasks at once is fine, within the [rate limits](limits.md).
+
+## Common errors
+
+| Error                                | Why                                                                     | Fix                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ |
+| `KeyError: 'POPNOW_API_KEY'`         | The variable is not set in this shell                                   | `export POPNOW_API_KEY="sk-popnow-..."`                |
+| `RuntimeError: 400 …` naming a field | The model does not accept that field or value                           | Check the model's page; fields differ per model        |
+| `RuntimeError: 40201 …`              | Not enough credits for the next task                                    | Top up; tasks already accepted keep running            |
+| `RuntimeError: 429 …`                | Too many requests at once                                               | Submit in smaller groups and honour `Retry-After`      |
+| `RuntimeError: failed: …`            | One item failed or was declined                                         | Nothing was charged for it; fix that row and rerun     |
+| `RuntimeError: 40003 …` on commit    | The uploaded bytes do not match the ticket                              | Ask for a new ticket and upload again                  |
+| Webhook returns `401`                | Signature computed on parsed JSON instead of raw bytes, or wrong secret | Use `express.raw`, and the secret from the API console |
+
+### Is there an official Python or Node SDK?
+
+Not yet. The API is plain REST with JSON, so these recipes use requests and the built-in fetch, and the OpenAPI file can generate a typed client.
+
+### How many tasks can a batch run at once?
+
+Many: submit them all, then collect. Keep within the rate limits on the Rate limits page and put a daily spend cap on the key you use for batches.
+
+### What happens if my script crashes halfway through a batch?
+
+Run it again. Each row uses the same idempotency key as before, so rows that were already accepted return their original task instead of being charged twice.
+
+## Related
+
+- [n8n workflow](https://popnow.ai/docs/n8n): The same loop without code.
+- [Upload your own files](media.md): Tickets, PUT and commit in detail.
+- [Idempotency](idempotency.md): Why every recipe sends a key.
+- [Recipes on popnow.ai](https://popnow.ai/api/workflows): These scripts generated for any model.
+
+---
+
+# OpenAI Videos compatibility
+
+> Call PopNow video models with the request and response shapes of the OpenAI Videos API.
+
+Online version: <https://popnow.ai/docs/openai-videos>
+
+If your code already speaks the OpenAI Videos API, you can point it at PopNow and keep most of it. The compatible endpoints live under `https://api.popnow.ai/v1` and share keys, limits, validation and credits with the native API.
+
+| OpenAI-style call             | Does                                        |
+| ----------------------------- | ------------------------------------------- |
+| `POST /v1/videos`             | Create a video task                         |
+| `GET /v1/videos/{id}`         | Read its state                              |
+| `GET /v1/videos/{id}/content` | Redirect (`302`) to the finished file       |
+| `GET /v1/models`              | List callable models in OpenAI's list shape |
+
+Only video, image and audio models are listed; chat and text endpoints are not part of the PopNow API.
+
+## Create a video
+
+```bash
+curl -X POST "https://api.popnow.ai/v1/videos" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "model": "alibaba/wan-3.0/image-to-video",
+    "prompt": "Waves roll in slowly, the camera drifts toward the lighthouse",
+    "input_reference": "https://media.popnow.ai/movie/lighthouse.webp",
+    "seconds": "5",
+    "size": "1280x720"
+  }'
+```
+
+How the fields map onto the model's own input:
+
+| OpenAI field            | Becomes                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| `model`                 | A video model ID from `/v1/models`                                                    |
+| `prompt`                | `prompt`                                                                              |
+| `input_reference`       | `image_url` / `image_urls` (an HTTPS URL or a `popnow://` upload)                     |
+| `seconds`               | `duration_seconds`                                                                    |
+| `size` (`WIDTHxHEIGHT`) | `resolution` and/or `aspect_ratio`, or `width` / `height` when the model takes pixels |
+
+A field the chosen model does not support is rejected with `400`, never silently dropped. For settings OpenAI's shape has no field for, use the native [createTask](tasks.md).
+
+## Read and download
+
+States map as `queued` → `queued`, `running` → `in_progress`, `succeeded` → `completed`, and `failed` / `expired` → `failed` with an `error` object. `GET /v1/videos/{id}/content` answers `302` to a short-lived signed link — follow redirects in your client — `409` while the video is still being made, and `404` if it failed.
+
+The returned objects never contain prices. Read the cost with the native [`recordInfo`](tasks.md#read-a-task), using the same ID.
+
+## Errors
+
+Errors use OpenAI's `{ "error": { "message", "type", "param", "code" } }` shape with the same HTTP status the native API would return. A content refusal is HTTP `400` with `code: "content_rejected"`, so you can tell it apart from a parameter error (`invalid_request` or `unsupported_parameter`, with `param` naming the field).
+
+---
+
+# ComfyUI node for cloud generation
+
+> Run cloud AI image, video and audio models inside ComfyUI with one custom node file and the PopNow API. No GPU or model downloads; install steps, inputs, pricing and error fixes.
+
+Online version: <https://popnow.ai/docs/comfyui>
+
+One small custom node puts every PopNow image, video and audio model into a ComfyUI graph. It sends the job to the cloud, waits, and hands the result to the next node: an `IMAGE` for image models, a saved file for video and audio. Nothing is downloaded to your GPU, so video models that need far more memory than a laptop has run fine from a laptop.
+
+This page matches the [ComfyUI page on popnow.ai](https://popnow.ai/api/comfyui), which fills in the node's defaults for the model you pick.
+
+## Install in four steps
+
+### Save the node file
+
+Save the code below as `custom_nodes/popnow_api.py` inside your ComfyUI folder. It uses only `requests`, Pillow, NumPy and PyTorch, which ComfyUI already ships.
+
+### Set your API key
+
+Create a key in the [API console](https://popnow.ai/api/console/keys) and set it in the environment you start ComfyUI from:
+
+```bash
+export POPNOW_API_KEY="sk-popnow-..."
+python main.py
+```
+
+On Windows portable builds, add `set POPNOW_API_KEY=sk-popnow-...` to the `.bat` file that starts ComfyUI.
+
+### Restart and add the node
+
+Restart ComfyUI, double-click the canvas, search for **PopNow** and add **PopNow Generate**.
+
+### Queue
+
+Type a model ID and a prompt, connect the `image` output to a Preview or Save node, and queue the prompt.
+
+## The node
+
+Read it before you run it; it is short on purpose.
+
+**custom_nodes/popnow_api.py**
+
+```python title="custom_nodes/popnow_api.py"
+"""PopNow API node for ComfyUI.
+
+Save as ComfyUI/custom_nodes/popnow_api.py, set POPNOW_API_KEY, restart ComfyUI.
+Runs any PopNow image, video or audio model in the cloud and returns the result.
+Docs: https://popnow.ai/docs/comfyui
+"""
+import io
+import json
+import os
+import time
+import uuid
+
+import numpy as np
+import requests
+import torch
+from PIL import Image
+
+import folder_paths
+
+BASE = "https://api.popnow.ai/api/v1"
+TERMINAL = ("succeeded", "failed", "canceled", "expired")
+
+def _headers(extra=None):
+    key = os.environ.get("POPNOW_API_KEY")
+    if not key:
+        raise RuntimeError("Set POPNOW_API_KEY before starting ComfyUI")
+    return {"Authorization": f"Bearer {key}", **(extra or {})}
+
+def _call(method, path, **kwargs):
+    headers = _headers(kwargs.pop("headers", None))
+    body = requests.request(method, BASE + path, headers=headers, timeout=60, **kwargs).json()
+    if body.get("code") != 200:
+        raise RuntimeError(f'PopNow {body.get("code")}: {body.get("msg")}')
+    return body["data"]
+
+def _upload(image):
+    """IMAGE tensor -> PNG -> upload -> popnow:// reference."""
+    arr = (image[0].cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(arr).save(buf, format="PNG")
+    data = buf.getvalue()
+    ticket = _call("POST", "/common/upload-url", json={"contentType": "image/png", "bytes": len(data)})
+    requests.put(ticket["uploadUrl"], data=data, headers=ticket.get("headers", {}), timeout=120).raise_for_status()
+    return _call("POST", f'/files/{ticket["fileId"]}/commit')["uri"]
+
+class PopNowGenerate:
+    CATEGORY = "PopNow"
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "url", "path")
+    FUNCTION = "run"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("STRING", {"default": "google/nano-banana-2.1/text-to-image"}),
+                "prompt": ("STRING", {"multiline": True, "default": "A lighthouse on a cliff at dusk, warm window light"}),
+                "options": ("STRING", {"multiline": True, "default": '{"aspect_ratio": "16:9", "resolution": "1k"}'}),
+            },
+            "optional": {
+                "image": ("IMAGE",),
+                "image_field": ("STRING", {"default": "image_url"}),
+            },
+        }
+
+    def run(self, model, prompt, options, image=None, image_field="image_url"):
+        task_input = json.loads(options or "{}")
+        if prompt.strip():
+            task_input.setdefault("prompt", prompt)
+        if image is not None:
+            ref = _upload(image)
+            task_input[image_field] = [ref] if image_field.endswith("s") else ref
+
+        task_id = _call(
+            "POST",
+            "/jobs/createTask",
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+            json={"model": model, "input": task_input},
+        )["taskId"]
+
+        delay = 2.0
+        while True:
+            time.sleep(delay)
+            task = _call("GET", "/jobs/recordInfo", params={"taskId": task_id})
+            assets = (task.get("output") or {}).get("assets") or []
+            copying = any(a.get("pending") and not a.get("unavailable") for a in assets)
+            if task["state"] in TERMINAL and not copying:
+                break
+            delay = min(delay * 1.5, 15.0)
+        if task["state"] != "succeeded" or not assets:
+            raise RuntimeError(f'PopNow {task["state"]}: {task.get("errorMessage", "no detail")}')
+
+        asset = assets[0]
+        content = requests.get(asset["url"], timeout=300).content
+        mime = asset.get("mime", "")
+        if mime.startswith("image/"):
+            pil = Image.open(io.BytesIO(content)).convert("RGB")
+            tensor = torch.from_numpy(np.asarray(pil).astype(np.float32) / 255.0)[None,]
+            return (tensor, asset["url"], "")
+
+        ext = {"video/mp4": ".mp4", "video/webm": ".webm", "audio/mpeg": ".mp3", "audio/wav": ".wav"}.get(mime, ".bin")
+        path = os.path.join(folder_paths.get_output_directory(), f"popnow_{task_id}{ext}")
+        with open(path, "wb") as f:
+            f.write(content)
+        # Video and audio: a small blank IMAGE keeps the graph valid; use the path output.
+        return (torch.zeros((1, 64, 64, 3)), asset["url"], path)
+
+NODE_CLASS_MAPPINGS = {"PopNowGenerate": PopNowGenerate}
+NODE_DISPLAY_NAME_MAPPINGS = {"PopNowGenerate": "PopNow Generate"}
+```
+
+## Inputs and outputs
+
+| Input              | What to put in it                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `model`            | A model ID from [Models](https://popnow.ai/docs/models), for example `google/nano-banana-2.1/text-to-image` or `minimax/h3/image-to-video`   |
+| `prompt`           | What to make. Leave it empty for models that take no prompt                                                                 |
+| `options`          | The model's other fields as JSON, such as `{"resolution": "2k"}` or `{"duration_seconds": 5}`. Each model's page lists them |
+| `image` (optional) | An `IMAGE` from another node. It is uploaded for you and placed in the field named by `image_field`                         |
+| `image_field`      | Which field gets the image: `image_url` for most video models, `image_urls` for image editing                               |
+
+| Output  | Contains                                                                           |
+| ------- | ---------------------------------------------------------------------------------- |
+| `image` | The result as an `IMAGE` for image models; a blank placeholder for video and audio |
+| `url`   | The signed file URL, valid for about 20 minutes                                    |
+| `path`  | For video and audio: where the file was saved in ComfyUI's output folder           |
+
+## Common setups
+
+| Goal                | `model`                                | `options`                                       | `image_field` |
+| ------------------- | -------------------------------------- | ----------------------------------------------- | ------------- |
+| Text to image       | `google/nano-banana-2.1/text-to-image` | `{"aspect_ratio": "16:9", "resolution": "1k"}`  | —             |
+| Edit a local render | `google/nano-banana-2.1/edit`          | `{"resolution": "2k"}`                          | `image_urls`  |
+| Animate a still     | `minimax/h3/image-to-video`            | `{"duration_seconds": 5, "resolution": "768p"}` | `image_url`   |
+| Upscale a frame     | `popnow/image-upscaler-v1/upscale`     | `{}`                                            | `image_url`   |
+| Cut out the subject | `popnow/background-remover-v1/edit`    | `{}`                                            | `image_url`   |
+
+A typical hybrid graph: make a start frame with a local checkpoint, animate it in the cloud with an image-to-video model, then load the saved MP4 back with a video loader node and upscale or interpolate it locally.
+
+## What the node does under the hood
+
+The node is a thin wrapper over three REST calls; the same calls in other languages:
+
+```bash
+curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask" \
+  -H "Authorization: Bearer $POPNOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"model": "google/nano-banana-2.1/text-to-image", "input": {"prompt": "A lighthouse on a cliff at dusk, warm window light", "aspect_ratio": "16:9", "resolution": "1k"}}'
+
+curl "https://api.popnow.ai/api/v1/jobs/recordInfo?taskId=job_..." \
+  -H "Authorization: Bearer $POPNOW_API_KEY"
+```
+
+```javascript title="JavaScript"
+const API = 'https://api.popnow.ai/api/v1';
+const auth = { Authorization: `Bearer ${process.env.POPNOW_API_KEY}` };
+const created = await fetch(`${API}/jobs/createTask`, {
+  method: 'POST',
+  headers: { ...auth, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+  body: JSON.stringify({
+    model: 'google/nano-banana-2.1/text-to-image',
+    input: { prompt: 'A lighthouse on a cliff at dusk, warm window light', aspect_ratio: '16:9', resolution: '1k' },
+  }),
+}).then((r) => r.json());
+console.log(created.data.taskId);
+```
+
+Uploading the input image is the three-step flow on [Media](media.md#upload-a-file); the result is a `popnow://f/…` reference that only works with keys on your own account.
+
+## Pricing
+
+Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 8 credits per image, MiniMax H3 at 768p is 28 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
+
+## Common errors
+
+| ComfyUI shows                                | Why                                                                      | Fix                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `Set POPNOW_API_KEY before starting ComfyUI` | The variable is not in ComfyUI's environment                             | Set it in the same shell or `.bat` file, then restart             |
+| `PopNow 401: …`                              | Key missing, mistyped or revoked                                         | Create a new key in the API console                               |
+| `PopNow 400: …` naming a field               | `options` has a field the model does not accept, or a value out of range | Check the model's page; unknown fields are rejected               |
+| `PopNow 40201: …`                            | Not enough credits                                                       | Top up, or lower the resolution or length                         |
+| `PopNow failed: …`                           | The model could not finish or declined the request                       | Nothing was charged; change the prompt or settings                |
+| `JSONDecodeError`                            | `options` is not valid JSON                                              | Use double quotes: `{"resolution": "2k"}`                         |
+| Node not in the search list                  | The file is not in `custom_nodes`, or ComfyUI was not restarted          | Check the path and restart; look for import errors in the console |
+
+### Is this an official package on the ComfyUI registry?
+
+No. It is a single file published here and on popnow\.ai. Copy it, read it, and update it from this page when the API changes.
+
+### Does it work with ComfyUI Desktop and portable builds?
+
+Yes. It works anywhere you can add a custom node and set an environment variable: portable, Desktop and self-hosted servers.
+
+### Do I need a GPU?
+
+No. Generation runs on PopNow's side; your machine only sends the request and receives the file.
+
+### How do I get video frames back into the graph?
+
+The node saves the video to ComfyUI's output folder and returns its path. Load it with a video loader node to get frames.
+
+## Related
+
+- [Blender add-on](https://popnow.ai/docs/blender): Clay renders to AI images and video inside Blender.
+- [n8n](https://popnow.ai/docs/n8n): The same calls as a no-code workflow.
+- [Models](https://popnow.ai/docs/models): Every model ID, its fields and its price.
+- [ComfyUI on popnow.ai](https://popnow.ai/api/comfyui): The node with defaults for any model.
