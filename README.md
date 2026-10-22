@@ -29,7 +29,7 @@ This repository contains the official [OpenAPI 3.1 spec](openapi.yaml), copy-pas
    export POPNOW_API_KEY="sk-popnow-..."
    ```
 
-2. **Create a task.** This asks a fast image model for one picture (about 2 credits) and waits up to 60 seconds for it:
+2. **Create a task.** This asks a fast image model for one picture (about 10 credits, one US cent) and waits up to 60 seconds for it:
 
    ```bash
    curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask?wait=60" \
@@ -106,7 +106,7 @@ GET  /api/v1/jobs/recordInfo   -> { state: "succeeded" | "failed" | "expired", o
 - **Base URL:** `https://api.popnow.ai`. Native endpoints live under `/api/v1`; OpenAI-compatible ones under `/v1`.
 - **Authentication:** `Authorization: Bearer sk-popnow-...` on every request. Keep keys on your server. See [docs/authentication.md](docs/authentication.md).
 - **Envelope:** every native JSON response is `{ "code", "msg", "data", "request_id" }`. `code: 200` is success; branch on `code`, never on `msg`. Quote `request_id` to support.
-- **Credits:** 1 credit = US$0.01, the same wallet and prices as popnow.ai. Credit packs, no subscription. `createTask` holds the maximum price; the final charge is never higher, and failed or expired tasks are not charged. See [pricing](https://popnow.ai/pricing).
+- **Credits:** 1 credit = US$0.001, the same wallet and prices as popnow.ai. Credit packs, no subscription. `createTask` holds the maximum price; the final charge is never higher, and failed or expired tasks are not charged. See [pricing](https://popnow.ai/pricing).
 - **Idempotency:** send an `Idempotency-Key` on `createTask` and reuse it on every retry, so a timeout never generates or charges twice. See [docs/idempotency.md](docs/idempotency.md).
 - **Files:** pass a public HTTPS URL, a small Base64 data URI, or upload first and pass `popnow://f/fil_...`. See [docs/media.md](docs/media.md).
 - **Webhooks:** add `callBackUrl` and verify `X-Webhook-Signature` (HMAC-SHA256). See [docs/webhooks.md](docs/webhooks.md).
@@ -207,7 +207,7 @@ Video models include Kling, Seedance, Wan, Vidu and MiniMax; image models includ
 
 ### How much does the PopNow API cost?
 
-You pay per generation in credits (1 credit = US$0.01) from the same wallet as the website, with no subscription or separate API plan. Each model's price is in `GET /api/v1/models`, `POST /api/v1/jobs/quote` prices a specific request, and failed or expired tasks are not charged. Credit packs: <https://popnow.ai/pricing>.
+You pay per generation in credits (1 credit = US$0.001) from the same wallet as the website, with no subscription or separate API plan. Each model's price is in `GET /api/v1/models`, `POST /api/v1/jobs/quote` prices a specific request, and failed or expired tasks are not charged. Credit packs start at $9 for 9,000 credits (larger packs add bonus credits), or buy any amount from $10 to $2,000 at 1,000 credits per $1: <https://popnow.ai/pricing>.
 
 ### Can I use the OpenAI SDK with PopNow?
 

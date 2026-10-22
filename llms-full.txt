@@ -8,7 +8,7 @@
 - Authentication: `Authorization: Bearer sk-popnow-...` (create keys at https://popnow.ai/api/console/keys)
 - Envelope: every native JSON response is `{code, msg, data, request_id}`; `code: 200` means success
 - Async flow: POST /api/v1/jobs/quote (optional price check) -> POST /api/v1/jobs/createTask -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
-- Models and prices: GET /api/v1/models (1 credit = US$0.01; failed tasks are not charged)
+- Models and prices: GET /api/v1/models (1 credit = US$0.001; failed tasks are not charged)
 - OpenAPI spec: https://github.com/popnow-ai/popnow-api/blob/main/openapi.yaml (also https://popnow.ai/docs/openapi.yaml)
 - Website: https://popnow.ai - Docs: https://popnow.ai/docs - Pricing: https://popnow.ai/pricing - MCP server: https://popnow.ai/mcp
 
@@ -39,7 +39,7 @@ Every key starts with `sk-popnow-` and spends the credits in your account. Keep 
 
 ## 2. Send a task
 
-Paste this into the same terminal. It asks a fast image model for one picture and costs a couple of credits:
+Paste this into the same terminal. It asks a fast image model for one picture and costs about 10 credits (one US cent):
 
 ```bash
 export POPNOW_API_KEY="sk-popnow-..."   # your key from the API console
@@ -86,8 +86,8 @@ A finished task looks like this:
         }
       ]
     },
-    "credits": 2,
-    "cost": "0.02",
+    "credits": 10,
+    "cost": "0.01",
     "settled": true
   },
   "request_id": "req_…"
@@ -96,7 +96,7 @@ A finished task looks like this:
 
 * `state` is `succeeded`. A task that could not finish says `failed` and carries an `errorCode`; see [Errors](errors.md#task-failure-codes).
 * `output.assets[0].url` is a signed link to the file. It works for about 20 minutes, needs no API key, and you can always get a fresh one by reading the task again.
-* `credits` is what the task was charged, in whole credits (1 credit = $0.01). `cost` carries the same amount as a US dollar string.
+* `credits` is what the task was charged, in whole credits (1 credit = $0.001). `cost` carries the same amount as a US dollar string.
 
 If the model needs more than 60 seconds — every video model does — the response is a `202` with `state: "queued"` and a `taskId` instead. Ask for the task until it is final:
 
@@ -333,8 +333,8 @@ A new task comes back as HTTP `202`:
   "data": {
     "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
     "state": "queued",
-    "estimatedCredits": 34,
-    "estimatedCost": "0.34",
+    "estimatedCredits": 225,
+    "estimatedCost": "0.225",
     "deadlineAt": "2026-10-16T09:40:00Z"
   },
   "request_id": "req_…"
@@ -606,8 +606,8 @@ The body is exactly what `recordInfo` would return for the task:
     "model": "alibaba/wan-3.0/image-to-video",
     "state": "succeeded",
     "output": { "assets": [{ "url": "https://…", "mime": "video/mp4", "durationSeconds": 5 }] },
-    "credits": 34,
-    "cost": "0.34",
+    "credits": 225,
+    "cost": "0.225",
     "settled": true
   },
   "request_id": "whd_01JH8Z…"
@@ -1269,10 +1269,10 @@ Four small scripts for the jobs people automate first. Each one is complete: ins
 
 | Recipe                                       | Model                                        | Cost per item                     |
 | -------------------------------------------- | -------------------------------------------- | --------------------------------- |
-| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 2 credits per image               |
-| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 28 credits for 5 s at 768p        |
-| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 1 credit per 20 s of speech |
-| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 28 credits for 5 s at 768p        |
+| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 10 credits per image              |
+| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
+| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 7 credits per 20 s of speech |
+| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
 
 Swap the model for any other on [Models](https://popnow.ai/docs/models); keep the `input` fields to the ones that model's schema lists.
 
@@ -1800,7 +1800,7 @@ Uploading the input image is the three-step flow on [Media](media.md#upload-a-fi
 
 ## Pricing
 
-Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 8 credits per image, MiniMax H3 at 768p is 28 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
+Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 48 credits per image, MiniMax H3 at 768p is 185 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
 
 ## Common errors
 

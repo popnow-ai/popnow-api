@@ -212,7 +212,7 @@ Uploading the input image is the three-step flow on [Media](media.md#upload-a-fi
 
 ## Pricing
 
-Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 8 credits per image, MiniMax H3 at 768p is 28 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
+Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 48 credits per image, MiniMax H3 at 768p is 185 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
 
 ## Common errors
 

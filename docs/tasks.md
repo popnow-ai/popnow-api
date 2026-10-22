@@ -60,8 +60,8 @@ A new task comes back as HTTP `202`:
   "data": {
     "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
     "state": "queued",
-    "estimatedCredits": 34,
-    "estimatedCost": "0.34",
+    "estimatedCredits": 225,
+    "estimatedCost": "0.225",
     "deadlineAt": "2026-10-16T09:40:00Z"
   },
   "request_id": "req_…"

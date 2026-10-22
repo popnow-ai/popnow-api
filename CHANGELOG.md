@@ -2,6 +2,10 @@
 
 All notable changes to this repository are listed here. For changes to the API itself, see <https://popnow.ai/docs/changelog>.
 
+## Unreleased
+
+- Credit amounts follow the 2026-10-19 change to 1 credit = US$0.001: the spec descriptions, docs examples (`credits`, `estimatedCredits`, `cost`), recipe prices, README and `llms*.txt` now use the new unit and current prices.
+
 ## 1.0.0 — 2026-10-19
 
 - OpenAPI 3.1 spec for the PopNow API (`openapi.yaml`), provided under the MIT License.

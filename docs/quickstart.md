@@ -23,7 +23,7 @@ Every key starts with `sk-popnow-` and spends the credits in your account. Keep 
 
 ## 2. Send a task
 
-Paste this into the same terminal. It asks a fast image model for one picture and costs a couple of credits:
+Paste this into the same terminal. It asks a fast image model for one picture and costs about 10 credits (one US cent):
 
 ```bash
 export POPNOW_API_KEY="sk-popnow-..."   # your key from the API console
@@ -70,8 +70,8 @@ A finished task looks like this:
         }
       ]
     },
-    "credits": 2,
-    "cost": "0.02",
+    "credits": 10,
+    "cost": "0.01",
     "settled": true
   },
   "request_id": "req_…"
@@ -80,7 +80,7 @@ A finished task looks like this:
 
 * `state` is `succeeded`. A task that could not finish says `failed` and carries an `errorCode`; see [Errors](errors.md#task-failure-codes).
 * `output.assets[0].url` is a signed link to the file. It works for about 20 minutes, needs no API key, and you can always get a fresh one by reading the task again.
-* `credits` is what the task was charged, in whole credits (1 credit = $0.01). `cost` carries the same amount as a US dollar string.
+* `credits` is what the task was charged, in whole credits (1 credit = $0.001). `cost` carries the same amount as a US dollar string.
 
 If the model needs more than 60 seconds — every video model does — the response is a `202` with `state: "queued"` and a `taskId` instead. Ask for the task until it is final:
 

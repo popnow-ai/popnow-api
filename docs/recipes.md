@@ -8,10 +8,10 @@ Four small scripts for the jobs people automate first. Each one is complete: ins
 
 | Recipe                                       | Model                                        | Cost per item                     |
 | -------------------------------------------- | -------------------------------------------- | --------------------------------- |
-| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 2 credits per image               |
-| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 28 credits for 5 s at 768p        |
-| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 1 credit per 20 s of speech |
-| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 28 credits for 5 s at 768p        |
+| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 10 credits per image              |
+| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
+| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 7 credits per 20 s of speech |
+| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
 
 Swap the model for any other on [Models](https://popnow.ai/docs/models); keep the `input` fields to the ones that model's schema lists.
 

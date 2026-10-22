@@ -54,8 +54,8 @@ The body is exactly what `recordInfo` would return for the task:
     "model": "alibaba/wan-3.0/image-to-video",
     "state": "succeeded",
     "output": { "assets": [{ "url": "https://…", "mime": "video/mp4", "durationSeconds": 5 }] },
-    "credits": 34,
-    "cost": "0.34",
+    "credits": 225,
+    "cost": "0.225",
     "settled": true
   },
   "request_id": "whd_01JH8Z…"

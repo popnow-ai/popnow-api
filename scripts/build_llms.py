@@ -40,7 +40,7 @@ HEADER = """\
 - Authentication: `Authorization: Bearer sk-popnow-...` (create keys at https://popnow.ai/api/console/keys)
 - Envelope: every native JSON response is `{{code, msg, data, request_id}}`; `code: 200` means success
 - Async flow: POST /api/v1/jobs/quote (optional price check) -> POST /api/v1/jobs/createTask -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
-- Models and prices: GET /api/v1/models (1 credit = US$0.01; failed tasks are not charged)
+- Models and prices: GET /api/v1/models (1 credit = US$0.001; failed tasks are not charged)
 - OpenAPI spec: {repo}/blob/main/openapi.yaml (also https://popnow.ai/docs/openapi.yaml)
 - Website: https://popnow.ai - Docs: https://popnow.ai/docs - Pricing: https://popnow.ai/pricing - MCP server: https://popnow.ai/mcp
 """.format(repo=REPO)
