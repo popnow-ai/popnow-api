@@ -46,7 +46,8 @@ if (!isDone(task)) task = await waitFor(taskId);
 console.log(JSON.stringify({
   taskId: task.taskId,
   state: task.state,
-  credits: task.credits,
+  // The final USD charge once settled, otherwise the hold. An exact decimal string.
+  costUsd: task.costUsd,
   settled: task.settled,
   errorCode: task.errorCode,
   errorMessage: task.errorMessage,

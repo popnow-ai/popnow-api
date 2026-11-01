@@ -13,5 +13,5 @@ We will acknowledge your report, keep you informed while we investigate, and cre
 
 ## Scope
 
-- The PopNow API at `https://api.popnow.ai`, its webhooks and the MCP server at `https://api.popnow.ai/mcp`.
+- The PopNow API at `https://api.popnow.ai`, its webhooks and the developer MCP server at `https://api.popnow.ai/api/v1/mcp`.
 - The example code in this repository (for example, a flaw in the webhook signature checks).

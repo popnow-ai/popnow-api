@@ -16,7 +16,7 @@ import uuid
 
 API = os.environ.get("POPNOW_API_BASE", "https://api.popnow.ai") + "/api/v1"
 # Send a descriptive User-Agent: some networks block the default "Python-urllib" one.
-UA = "popnow-api-examples/1.0 (python)"
+UA = "popnow-api-examples/1.1 (python)"
 FINAL = ("succeeded", "failed", "expired", "canceled")
 
 
@@ -71,7 +71,8 @@ def main():
     url = task["output"]["assets"][0]["url"]
     with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=300) as res, open(out, "wb") as f:
         f.write(res.read())
-    print(f"saved {out} ({task['credits']} credits, task {task['taskId']})")
+    # costUsd is the final charge once settled, otherwise the hold.
+    print(f"saved {out} ({'charged' if task['settled'] else 'held'} ${task['costUsd']}, task {task['taskId']})")
 
 
 if __name__ == "__main__":

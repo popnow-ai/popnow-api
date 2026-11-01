@@ -18,7 +18,7 @@ A demo needs one request. A product needs to survive timeouts, duplicate webhook
 * [ ] Every `createTask` sends an `Idempotency-Key` derived from your own job ID, generated once, reused on every retry.
 * [ ] Only `429`, `500`, `503` and `50301` are retried, with backoff and `Retry-After` ([Errors](errors.md#writing-the-retry)).
 * [ ] `400`, `40004` and other "fix the request" errors are shown or logged, not retried.
-* [ ] If you show prices, you quote first and pass `quoteId` and `expectedCredits`, and handle `40901`.
+* [ ] If you show prices, you quote first, show `maxChargeUsd`, pass `quoteId` and `expectedCostUsd` (that `maxChargeUsd`), and handle `40901`.
 * [ ] A low balance (`40201`) reaches a person — an alert, an email, a banner — before users notice.
 
 ## Getting results
@@ -41,7 +41,8 @@ A demo needs one request. A product needs to survive timeouts, duplicate webhook
 * [ ] You know each model's price unit (per image, per second, per request) and the settings that raise it.
 * [ ] Previews and tests use the cheapest resolution and shortest duration.
 * [ ] A spend cap stops runaway loops before they empty the balance.
-* [ ] You check `credits` and `settled` rather than assuming the estimate was charged.
+* [ ] You check `costUsd` and `settled` rather than assuming the estimate was charged.
+* [ ] USD amounts stay exact decimal strings (or a decimal type) end to end; nothing converts them through binary floating point.
 
 ## Monitoring
 

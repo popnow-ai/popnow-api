@@ -54,11 +54,12 @@ const created = await api('/jobs/createTask', {
     input: { image_url: image, prompt, resolution: '480p', duration_seconds: 5 },
   },
 });
-console.error(`created ${created.taskId}, holding ${created.estimatedCredits} credits`);
+console.error(`created ${created.taskId}, holding $${created.estimatedCostUsd} from the API balance`);
 
 const task = await waitFor(created.taskId, { delayMs: 5000 });
 if (task.state !== 'succeeded') throw new Error(`${task.state}: ${task.errorCode} ${task.errorMessage} (nothing was charged)`);
 
 const file = await fetch(task.output.assets[0].url);
 await writeFile('video.mp4', Buffer.from(await file.arrayBuffer()));
-console.log(`saved video.mp4 (${task.credits} credits)`);
+// costUsd is the final charge once settled, otherwise the hold.
+console.log(`saved video.mp4 (${task.settled ? 'charged' : 'held'} $${task.costUsd})`);

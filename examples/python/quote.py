@@ -1,8 +1,9 @@
-"""Price a task before running it, then create it at exactly that price.
+"""Price a task in USD before running it, then create it at exactly that price.
 
 The quote validates the input like createTask but creates nothing and holds nothing.
-It is valid for five minutes; passing quoteId + expectedCredits to createTask guarantees
-the held amount matches what you showed (an expired or changed quote fails with 40901).
+It is valid for five minutes; passing quoteId + expectedCostUsd (the quote's maxChargeUsd)
+to createTask guarantees the held amount matches what you showed (an expired or changed
+quote fails with 40901). Amounts are exact USD decimal strings: keep them as strings.
 
 Usage: python3 quote.py [--create]
 Standard library only (Python 3.8+).
@@ -16,7 +17,7 @@ import uuid
 
 API = os.environ.get("POPNOW_API_BASE", "https://api.popnow.ai") + "/api/v1"
 # Send a descriptive User-Agent: some networks block the default "Python-urllib" one.
-UA = "popnow-api-examples/1.0 (python)"
+UA = "popnow-api-examples/1.1 (python)"
 
 REQUEST = {
     "model": "alibaba/wan-3.0/image-to-video",
@@ -54,17 +55,18 @@ def api(method, path, body=None, headers=None):
 
 def main():
     quote = api("POST", "/jobs/quote", REQUEST)
-    print(f"{quote['model']}: up to {quote['maxCredits']} credits (${quote['maxCharge']}), "
-          f"usually {quote['expectedCredits']}; quote expires {quote['expiresAt']}")
+    print(f"{quote['model']}: up to ${quote['maxChargeUsd']}, usually ${quote['expectedChargeUsd']}; "
+          f"quote expires {quote['expiresAt']}")
 
     if "--create" in sys.argv:
         task = api(
             "POST",
             "/jobs/createTask",
-            {**REQUEST, "quoteId": quote["quoteId"], "expectedCredits": quote["expectedCredits"]},
+            # Confirm the maximum hold, not the typical charge.
+            {**REQUEST, "quoteId": quote["quoteId"], "expectedCostUsd": quote["maxChargeUsd"]},
             headers={"Idempotency-Key": str(uuid.uuid4())},
         )
-        print("created", task["taskId"], "holding", task["estimatedCredits"], "credits")
+        print("created", task["taskId"], "holding", "$" + task["estimatedCostUsd"], "from the API balance")
 
 
 if __name__ == "__main__":

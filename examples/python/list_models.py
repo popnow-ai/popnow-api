@@ -1,4 +1,4 @@
-"""List every model your key can call, with its price in credits.
+"""List every model your key can call, with its USD price.
 
 Usage: python3 list_models.py [image|video|audio]
 Standard library only (Python 3.8+).
@@ -12,7 +12,7 @@ import urllib.request
 
 API = os.environ.get("POPNOW_API_BASE", "https://api.popnow.ai") + "/api/v1"
 # Send a descriptive User-Agent: some networks block the default "Python-urllib" one.
-UA = "popnow-api-examples/1.0 (python)"
+UA = "popnow-api-examples/1.1 (python)"
 
 
 def api(method, path, body=None, headers=None):
@@ -43,7 +43,10 @@ def main():
     query = {"modality": sys.argv[1]} if len(sys.argv) > 1 else {}
     data = api("GET", "/models" + ("?" + urllib.parse.urlencode(query) if query else ""))
     for item in data["items"]:
-        print(f"{item['model']:<60} {item['modality']:<6} {item['credits']}")
+        # `usd` is a rate snapshot with string amounts; jobs/quote gives the exact price of one request.
+        usd = item.get("usd") or {}
+        price = f"${usd['perUnit']} {usd.get('unit', '')}" if "perUnit" in usd else "see GET /api/v1/models/" + item["model"]
+        print(f"{item['model']:<60} {item['modality']:<6} {price}")
     print(f"{data['total']} models", file=sys.stderr)
 
 

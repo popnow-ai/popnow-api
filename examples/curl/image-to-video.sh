@@ -26,6 +26,6 @@ if [ "$(echo "$CREATED" | jq -r .code)" != "200" ]; then
   exit 1
 fi
 TASK_ID=$(echo "$CREATED" | jq -r .data.taskId)
-echo "Created $TASK_ID (holding $(echo "$CREATED" | jq -r .data.estimatedCredits) credits)" >&2
+echo "Created $TASK_ID (holding \$$(echo "$CREATED" | jq -r .data.estimatedCostUsd) from the API balance)" >&2
 
 exec "$(dirname "$0")/poll-job.sh" "$TASK_ID"

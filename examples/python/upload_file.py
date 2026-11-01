@@ -13,7 +13,7 @@ import urllib.request
 
 API = os.environ.get("POPNOW_API_BASE", "https://api.popnow.ai") + "/api/v1"
 # Send a descriptive User-Agent: some networks block the default "Python-urllib" one.
-UA = "popnow-api-examples/1.0 (python)"
+UA = "popnow-api-examples/1.1 (python)"
 
 
 def api(method, path, body=None, headers=None):

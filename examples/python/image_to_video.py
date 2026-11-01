@@ -14,7 +14,7 @@ import uuid
 
 API = os.environ.get("POPNOW_API_BASE", "https://api.popnow.ai") + "/api/v1"
 # Send a descriptive User-Agent: some networks block the default "Python-urllib" one.
-UA = "popnow-api-examples/1.0 (python)"
+UA = "popnow-api-examples/1.1 (python)"
 FINAL = ("succeeded", "failed", "expired", "canceled")
 
 
@@ -72,7 +72,7 @@ def main():
         },
         headers={"Idempotency-Key": key},
     )
-    print(f"created {created['taskId']}, holding {created['estimatedCredits']} credits", file=sys.stderr)
+    print(f"created {created['taskId']}, holding ${created['estimatedCostUsd']} from the API balance", file=sys.stderr)
 
     task = wait(created["taskId"])
     if task["state"] != "succeeded":
@@ -81,7 +81,8 @@ def main():
     url = task["output"]["assets"][0]["url"]
     with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=600) as res, open("video.mp4", "wb") as f:
         f.write(res.read())
-    print(f"saved video.mp4 ({task['credits']} credits)")
+    # costUsd is the final charge once settled, otherwise the hold.
+    print(f"saved video.mp4 ({'charged' if task['settled'] else 'held'} ${task['costUsd']})")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 Online version: <https://popnow.ai/docs/openai-videos>
 
-If your code already speaks the OpenAI Videos API, you can point it at PopNow and keep most of it. The compatible endpoints live under `https://api.popnow.ai/v1` and share keys, limits, validation and credits with the native API.
+If your code already speaks the OpenAI Videos API, you can point it at PopNow and keep most of it. The compatible endpoints live under `https://api.popnow.ai/v1` and share keys, limits, validation and the API USD balance with the native API.
 
 | OpenAI-style call             | Does                                        |
 | ----------------------------- | ------------------------------------------- |
@@ -13,7 +13,7 @@ If your code already speaks the OpenAI Videos API, you can point it at PopNow an
 | `GET /v1/videos/{id}/content` | Redirect (`302`) to the finished file       |
 | `GET /v1/models`              | List callable models in OpenAI's list shape |
 
-Only video, image and audio models are listed; chat and text endpoints are not part of the PopNow API.
+Chat models use their own standard protocols on the same base URL (OpenAI Chat Completions and Responses, Anthropic Messages, Gemini `generateContent`); see [Chat and compatible APIs](https://popnow.ai/docs/chat).
 
 ## Create a video
 

@@ -54,4 +54,5 @@ if (task.state !== 'succeeded') throw new Error(`${task.state}: ${task.errorCode
 // Signed link, valid for about 20 minutes. Do not send the API key to it.
 const file = await fetch(task.output.assets[0].url);
 await writeFile(out, Buffer.from(await file.arrayBuffer()));
-console.log(`saved ${out} (${task.credits} credits, task ${task.taskId})`);
+// costUsd is the final charge once settled, otherwise the hold.
+console.log(`saved ${out} (${task.settled ? 'charged' : 'held'} $${task.costUsd}, task ${task.taskId})`);

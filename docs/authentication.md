@@ -24,12 +24,12 @@ A key is `sk-popnow-` followed by 48 lowercase hexadecimal characters. The API c
 2. Choose **Create key** and give it a name that says where it will live, such as `production-backend`.
 3. Copy the key immediately. It is shown once.
 
-You can hold several keys at once — one per environment or per service is a good habit, because you can then revoke one without touching the others. All keys spend from the same credit balance.
+You can hold several keys at once — one per environment or per service is a good habit, because you can then revoke one without touching the others. All keys spend from the same API balance (USD), which is separate from website credits.
 
 ## Where to keep it
 
 * In an environment variable or your platform's secret store (`POPNOW_API_KEY`), not in source code.
-* Never in a browser, a mobile app or any other code that runs on someone else's device. Anyone who can read the key can spend your credits. Put your own server in between and let it call PopNow.
+* Never in a browser, a mobile app or any other code that runs on someone else's device. Anyone who can read the key can spend your API balance. Put your own server in between and let it call PopNow.
 * Not in logs. If you log request headers, drop `Authorization` first.
 
 ## Restrict what a key can do
@@ -40,7 +40,7 @@ Each key can carry its own limits, set in the API console:
 | -------------- | ----------------------------------------------------------------- | ------------------------------ |
 | Allowed models | The key can call only the models you list                         | `40301`                        |
 | IP allowlist   | Requests must come from these addresses or ranges                 | `40302`                        |
-| Spend caps     | Daily, monthly and lifetime limits for this key, shown in credits | `40202`                        |
+| Spend caps     | Daily, monthly and lifetime limits for this key, in USD           | `40202`                        |
 
 By default a key has no restrictions and no caps. Give production keys the narrowest set that still works.
 

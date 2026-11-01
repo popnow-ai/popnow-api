@@ -8,7 +8,7 @@ This page takes you from nothing to a generated image with one key and one reque
 
 ## Before you start
 
-* **A PopNow account.** Sign up at [popnow.ai](https://popnow.ai). The API spends the same credits as the website; buy a [credit pack](https://popnow.ai/pricing). There is no separate API plan.
+* **A PopNow account with API funds.** Sign up at [popnow.ai](https://popnow.ai). The API has its own USD balance, separate from website credits and starting at $0: add funds in [API billing](https://popnow.ai/api/console/billing). There is no subscription.
 * **A terminal with `curl`.** The examples use bash. On Windows, use WSL or Git Bash.
 
 ## 1. Create an API key
@@ -19,11 +19,11 @@ Open the [API console](https://popnow.ai/api/console/keys) and choose **Create k
 export POPNOW_API_KEY="sk-popnow-..."
 ```
 
-Every key starts with `sk-popnow-` and spends the credits in your account. Keep it on your server; [Authentication](authentication.md) explains restrictions, rotation and what to do if a key leaks.
+Every key starts with `sk-popnow-` and spends from your account's API balance. Keep it on your server; [Authentication](authentication.md) explains restrictions, rotation and what to do if a key leaks.
 
 ## 2. Send a task
 
-Paste this into the same terminal. It asks a fast image model for one picture and costs about 10 credits (one US cent):
+Paste this into the same terminal. It asks a fast image model for one picture and costs about $0.01:
 
 ```bash
 export POPNOW_API_KEY="sk-popnow-..."   # your key from the API console
@@ -70,8 +70,7 @@ A finished task looks like this:
         }
       ]
     },
-    "credits": 10,
-    "cost": "0.01",
+    "costUsd": "0.01",
     "settled": true
   },
   "request_id": "req_…"
@@ -80,7 +79,7 @@ A finished task looks like this:
 
 * `state` is `succeeded`. A task that could not finish says `failed` and carries an `errorCode`; see [Errors](errors.md#task-failure-codes).
 * `output.assets[0].url` is a signed link to the file. It works for about 20 minutes, needs no API key, and you can always get a fresh one by reading the task again.
-* `credits` is what the task was charged, in whole credits (1 credit = $0.001). `cost` carries the same amount as a US dollar string.
+* `costUsd` is what the task was charged, as an exact USD decimal string with up to nine decimal places. Keep it as a string rather than converting it to a float. Older integer credit fields may still appear for compatibility; ignore them.
 
 If the model needs more than 60 seconds — every video model does — the response is a `202` with `state: "queued"` and a `taskId` instead. Ask for the task until it is final:
 
@@ -166,7 +165,7 @@ Every JSON response has the same four fields:
 
 ## Next
 
-- [Pick a model](https://popnow.ai/docs/models): Every model ID, its parameters and its price in credits.
+- [Pick a model](https://popnow.ai/docs/models): Every model ID, its parameters and its price in USD.
 - [How tasks work](tasks.md): States, polling, wait, retries and the task list.
 - [Upload your own files](media.md): Send reference images, video and audio.
 - [Get notified](webhooks.md): Receive the result instead of polling.

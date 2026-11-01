@@ -32,17 +32,18 @@ ORDER = [
 HEADER = """\
 # PopNow API
 
-> PopNow API is a REST API for AI video, image and music generation: one API key and one credit
-> wallet give access to models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image,
+> PopNow API is a REST API for AI video, image and music generation: one API key and one USD API
+> balance give access to models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image,
 > Flux and Suno. This repository holds the OpenAPI 3.1 spec, runnable examples and Markdown docs.
 
 - Base URL: https://api.popnow.ai (native endpoints under /api/v1, OpenAI-compatible endpoints under /v1)
 - Authentication: `Authorization: Bearer sk-popnow-...` (create keys at https://popnow.ai/api/console/keys)
 - Envelope: every native JSON response is `{{code, msg, data, request_id}}`; `code: 200` means success
-- Async flow: POST /api/v1/jobs/quote (optional price check) -> POST /api/v1/jobs/createTask -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
-- Models and prices: GET /api/v1/models (1 credit = US$0.001; failed tasks are not charged)
+- Async flow: POST /api/v1/jobs/quote (optional price check, `maxChargeUsd`) -> POST /api/v1/jobs/createTask (lock the price with `quoteId` and `expectedCostUsd`) -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
+- Billing: exact USD from the API balance, separate from website credits; amounts are decimal strings (`maxChargeUsd`, `estimatedCostUsd`, `costUsd`, `availableUsd`); credit fields are deprecated. Failed tasks are not charged. Add funds: https://popnow.ai/api/console/billing
+- Models and prices: GET /api/v1/models (`usd` rate snapshot) and https://popnow.ai/api/pricing
 - OpenAPI spec: {repo}/blob/main/openapi.yaml (also https://popnow.ai/docs/openapi.yaml)
-- Website: https://popnow.ai - Docs: https://popnow.ai/docs - Pricing: https://popnow.ai/pricing - MCP server: https://popnow.ai/mcp
+- Website: https://popnow.ai - Docs: https://popnow.ai/docs - API pricing: https://popnow.ai/api/pricing - Developer MCP server: https://api.popnow.ai/api/v1/mcp (setup https://popnow.ai/api/mcp) - Agent skills: https://popnow.ai/api/skills
 """.format(repo=REPO)
 
 

@@ -1,16 +1,17 @@
 # PopNow API
 
-> PopNow API is a REST API for AI video, image and music generation: one API key and one credit
-> wallet give access to models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image,
+> PopNow API is a REST API for AI video, image and music generation: one API key and one USD API
+> balance give access to models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image,
 > Flux and Suno. This repository holds the OpenAPI 3.1 spec, runnable examples and Markdown docs.
 
 - Base URL: https://api.popnow.ai (native endpoints under /api/v1, OpenAI-compatible endpoints under /v1)
 - Authentication: `Authorization: Bearer sk-popnow-...` (create keys at https://popnow.ai/api/console/keys)
 - Envelope: every native JSON response is `{code, msg, data, request_id}`; `code: 200` means success
-- Async flow: POST /api/v1/jobs/quote (optional price check) -> POST /api/v1/jobs/createTask -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
-- Models and prices: GET /api/v1/models (1 credit = US$0.001; failed tasks are not charged)
+- Async flow: POST /api/v1/jobs/quote (optional price check, `maxChargeUsd`) -> POST /api/v1/jobs/createTask (lock the price with `quoteId` and `expectedCostUsd`) -> GET /api/v1/jobs/recordInfo?taskId=... until state is succeeded, failed or expired (or receive a webhook via callBackUrl)
+- Billing: exact USD from the API balance, separate from website credits; amounts are decimal strings (`maxChargeUsd`, `estimatedCostUsd`, `costUsd`, `availableUsd`); credit fields are deprecated. Failed tasks are not charged. Add funds: https://popnow.ai/api/console/billing
+- Models and prices: GET /api/v1/models (`usd` rate snapshot) and https://popnow.ai/api/pricing
 - OpenAPI spec: https://github.com/popnow-ai/popnow-api/blob/main/openapi.yaml (also https://popnow.ai/docs/openapi.yaml)
-- Website: https://popnow.ai - Docs: https://popnow.ai/docs - Pricing: https://popnow.ai/pricing - MCP server: https://popnow.ai/mcp
+- Website: https://popnow.ai - Docs: https://popnow.ai/docs - API pricing: https://popnow.ai/api/pricing - Developer MCP server: https://api.popnow.ai/api/v1/mcp (setup https://popnow.ai/api/mcp) - Agent skills: https://popnow.ai/api/skills
 
 ---
 
@@ -24,7 +25,7 @@ This page takes you from nothing to a generated image with one key and one reque
 
 ## Before you start
 
-* **A PopNow account.** Sign up at [popnow.ai](https://popnow.ai). The API spends the same credits as the website; buy a [credit pack](https://popnow.ai/pricing). There is no separate API plan.
+* **A PopNow account with API funds.** Sign up at [popnow.ai](https://popnow.ai). The API has its own USD balance, separate from website credits and starting at $0: add funds in [API billing](https://popnow.ai/api/console/billing). There is no subscription.
 * **A terminal with `curl`.** The examples use bash. On Windows, use WSL or Git Bash.
 
 ## 1. Create an API key
@@ -35,11 +36,11 @@ Open the [API console](https://popnow.ai/api/console/keys) and choose **Create k
 export POPNOW_API_KEY="sk-popnow-..."
 ```
 
-Every key starts with `sk-popnow-` and spends the credits in your account. Keep it on your server; [Authentication](authentication.md) explains restrictions, rotation and what to do if a key leaks.
+Every key starts with `sk-popnow-` and spends from your account's API balance. Keep it on your server; [Authentication](authentication.md) explains restrictions, rotation and what to do if a key leaks.
 
 ## 2. Send a task
 
-Paste this into the same terminal. It asks a fast image model for one picture and costs about 10 credits (one US cent):
+Paste this into the same terminal. It asks a fast image model for one picture and costs about $0.01:
 
 ```bash
 export POPNOW_API_KEY="sk-popnow-..."   # your key from the API console
@@ -86,8 +87,7 @@ A finished task looks like this:
         }
       ]
     },
-    "credits": 10,
-    "cost": "0.01",
+    "costUsd": "0.01",
     "settled": true
   },
   "request_id": "req_…"
@@ -96,7 +96,7 @@ A finished task looks like this:
 
 * `state` is `succeeded`. A task that could not finish says `failed` and carries an `errorCode`; see [Errors](errors.md#task-failure-codes).
 * `output.assets[0].url` is a signed link to the file. It works for about 20 minutes, needs no API key, and you can always get a fresh one by reading the task again.
-* `credits` is what the task was charged, in whole credits (1 credit = $0.001). `cost` carries the same amount as a US dollar string.
+* `costUsd` is what the task was charged, as an exact USD decimal string with up to nine decimal places. Keep it as a string rather than converting it to a float. Older integer credit fields may still appear for compatibility; ignore them.
 
 If the model needs more than 60 seconds — every video model does — the response is a `202` with `state: "queued"` and a `taskId` instead. Ask for the task until it is final:
 
@@ -182,7 +182,7 @@ Every JSON response has the same four fields:
 
 ## Next
 
-- [Pick a model](https://popnow.ai/docs/models): Every model ID, its parameters and its price in credits.
+- [Pick a model](https://popnow.ai/docs/models): Every model ID, its parameters and its price in USD.
 - [How tasks work](tasks.md): States, polling, wait, retries and the task list.
 - [Upload your own files](media.md): Send reference images, video and audio.
 - [Get notified](webhooks.md): Receive the result instead of polling.
@@ -215,12 +215,12 @@ A key is `sk-popnow-` followed by 48 lowercase hexadecimal characters. The API c
 2. Choose **Create key** and give it a name that says where it will live, such as `production-backend`.
 3. Copy the key immediately. It is shown once.
 
-You can hold several keys at once — one per environment or per service is a good habit, because you can then revoke one without touching the others. All keys spend from the same credit balance.
+You can hold several keys at once — one per environment or per service is a good habit, because you can then revoke one without touching the others. All keys spend from the same API balance (USD), which is separate from website credits.
 
 ## Where to keep it
 
 * In an environment variable or your platform's secret store (`POPNOW_API_KEY`), not in source code.
-* Never in a browser, a mobile app or any other code that runs on someone else's device. Anyone who can read the key can spend your credits. Put your own server in between and let it call PopNow.
+* Never in a browser, a mobile app or any other code that runs on someone else's device. Anyone who can read the key can spend your API balance. Put your own server in between and let it call PopNow.
 * Not in logs. If you log request headers, drop `Authorization` first.
 
 ## Restrict what a key can do
@@ -231,7 +231,7 @@ Each key can carry its own limits, set in the API console:
 | -------------- | ----------------------------------------------------------------- | ------------------------------ |
 | Allowed models | The key can call only the models you list                         | `40301`                        |
 | IP allowlist   | Requests must come from these addresses or ranges                 | `40302`                        |
-| Spend caps     | Daily, monthly and lifetime limits for this key, shown in credits | `40202`                        |
+| Spend caps     | Daily, monthly and lifetime limits for this key, in USD           | `40202`                        |
 
 By default a key has no restrictions and no caps. Give production keys the narrowest set that still works.
 
@@ -311,7 +311,7 @@ curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask" \
 | `model`                      | Yes      | The model ID from [Models](https://popnow.ai/docs/models)                                         |
 | `input`                      | Yes      | The model's own fields, validated against its input schema                       |
 | `callBackUrl`                | No       | Public HTTPS URL that receives the finished task. See [Webhooks](webhooks.md) |
-| `quoteId`, `expectedCredits` | No       | Lock in a price you confirmed with [jobs/quote](https://popnow.ai/docs/billing#quote)             |
+| `quoteId`, `expectedCostUsd` | No       | Lock in a price you confirmed with [jobs/quote](https://popnow.ai/docs/billing#quote): send the quote's `maxChargeUsd` as `expectedCostUsd`, or `quoteId` alone |
 
 ### Headers
 
@@ -333,21 +333,20 @@ A new task comes back as HTTP `202`:
   "data": {
     "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
     "state": "queued",
-    "estimatedCredits": 225,
-    "estimatedCost": "0.225",
+    "estimatedCostUsd": "0.225",
     "deadlineAt": "2026-10-16T09:40:00Z"
   },
   "request_id": "req_…"
 }
 ```
 
-`202` means **accepted**, not finished. `estimatedCredits` is the amount held from your balance — the most this task can cost (`estimatedCost` is the same amount in US dollars). If creation fails instead, nothing is created and nothing is held; the `code` tells you why ([Errors](errors.md)).
+`202` means **accepted**, not finished. `estimatedCostUsd` is the exact USD amount held from your API balance — the most this task can cost. If creation fails instead, nothing is created and nothing is held; the `code` tells you why ([Errors](errors.md)).
 
 ## States
 
 `queued` → `running` → `succeeded` / `failed` / `expired`
 
-A task is in exactly one state at a time. Only succeeded is charged; every other final state returns the held credits in full.
+A task is in exactly one state at a time. Only succeeded is charged; every other final state releases the held funds in full.
 
 | State       | Final? | Meaning                                                                    |
 | ----------- | ------ | -------------------------------------------------------------------------- |
@@ -382,7 +381,7 @@ curl "https://api.popnow.ai/api/v1/jobs/recordInfo?taskId=job_01JH8Z4Q5W2N7R3K9M
 | `input`                                  | The input as it was run, including the `seed` that was picked if you left it out                                                |
 | `output.assets[]`                        | The files. Each has `url`, `expiresAt`, `mime`, and when it applies `width`, `height`, `durationSeconds`, `bytes`, `role`       |
 | `errorCode`, `errorMessage`              | Why a task failed. Branch on `errorCode`, show `errorMessage`                                                                   |
-| `credits`, `cost`, `settled`             | While `settled` is `false`, `credits` is the hold; once `true`, it is the final charge. `cost` is the same amount in US dollars |
+| `costUsd`, `settled`                     | While `settled` is `false`, `costUsd` is the hold; once `true`, it is the final charge. An exact USD decimal string            |
 | `createdAt`, `completedAt`, `deadlineAt` | Timestamps; `deadlineAt` is when an unfinished task expires                                                                     |
 | `retention.outputsExpireAt`              | When this task's files will be removed                                                                                          |
 | `contentState`                           | `present`, or `expired` / `purged` once the content has been removed                                                            |
@@ -606,8 +605,7 @@ The body is exactly what `recordInfo` would return for the task:
     "model": "alibaba/wan-3.0/image-to-video",
     "state": "succeeded",
     "output": { "assets": [{ "url": "https://…", "mime": "video/mp4", "durationSeconds": 5 }] },
-    "credits": 225,
-    "cost": "0.225",
+    "costUsd": "0.225",
     "settled": true
   },
   "request_id": "whd_01JH8Z…"
@@ -758,13 +756,13 @@ The **Webhooks** page of the [API console](https://popnow.ai/api/console/webhook
 
 A webhook only fires when a task reaches a **final** state; `queued` and `running` are never delivered.
 
-| `data.state` | Meaning                                                                    | Credits                            |
+| `data.state` | Meaning                                                                    | Charge (`costUsd`)                 |
 | ------------ | -------------------------------------------------------------------------- | ---------------------------------- |
 | `succeeded`  | Files are in `output.assets`                                               | The actual price, at most the hold |
 | `failed`     | The model could not finish or declined the request; `errorCode` says which | Nothing; the hold is released      |
 | `expired`    | The task passed its deadline                                               | Nothing; the hold is released      |
 
-`canceled` exists only on old records. The full lifecycle, `wait` and polling are on [Tasks](tasks.md#states); refunds of failed tasks are on [Credits and refunds](https://popnow.ai/docs/credits-and-refunds#failed-tasks).
+`canceled` exists only on old records. The full lifecycle, `wait` and polling are on [Tasks](tasks.md#states); released holds of failed tasks are on [API balance and refunds](https://popnow.ai/docs/api-balance-and-refunds#failed-tasks).
 
 ## Troubleshooting
 
@@ -789,7 +787,7 @@ Task callbacks set with callBackUrl are signed with the account's webhook signin
 
 Seven retries over about nine hours: after 10 seconds, 30 seconds, 2 minutes, 10 minutes, 30 minutes, 2 hours and 6 hours. After that the delivery can be resent by hand from the console.
 
-### Do webhooks cost credits?
+### Do webhooks cost anything?
 
 No. Deliveries, retries and reading tasks are free; only the generation itself is charged.
 
@@ -940,10 +938,12 @@ When a model reports a specific reason for failing (for example an unreadable re
 
 ## Balance and caps
 
-| `code`  | HTTP | Meaning                                 | What to do                                                |
-| ------- | ---- | --------------------------------------- | --------------------------------------------------------- |
-| `40201` | 402  | Not enough credits for this task's hold | [Buy credits](https://popnow.ai/pricing), then send again |
-| `40202` | 402  | A key spend cap was reached             | Raise the cap in the API console, or wait for it to reset |
+| `code`  | HTTP | Meaning                                          | What to do                                                                  |
+| ------- | ---- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| `40201` | 402  | The API balance cannot cover this task's hold    | [Add funds](https://popnow.ai/api/console/billing), then send again         |
+| `40202` | 402  | A key spend cap was reached                      | Raise the cap in the API console, or wait for it to reset                   |
+
+The API balance is in USD and separate from website credits; website credits never pay for API calls.
 
 ## Permissions
 
@@ -963,7 +963,7 @@ A plain `403` with a valid key means the account cannot use the API right now; c
 | `50301` | 503  | The model cannot take tasks right now        | Yes, later — or choose another model |
 | `40004` | 400  | The model works, but not with these settings | No — change the setting              |
 
-Neither creates a task or holds credits.
+Neither creates a task or holds funds.
 
 ## Task failure codes
 
@@ -1157,7 +1157,7 @@ The response is the asset: `id`, `uri`, `name`, `kind` (`image`, `video` or `aud
 
 ### Storage plans
 
-Storage opens with your first credit purchase and grows with what you have bought over time; it never shrinks, and saved assets always stay usable. `GET /api/v1/assets/usage` shows the numbers for your account.
+Your storage plan sets how much you can keep; a plan never shrinks, and saved assets always stay usable. Storage eligibility is separate from the API USD balance: do not assume that adding API funds unlocks a storage plan. `GET /api/v1/assets/usage` shows your plan, its limits and what unlocks the next one; contact support if the library is locked and you expected otherwise.
 
 ### Errors
 
@@ -1165,7 +1165,7 @@ Asset library errors add a machine-readable `data.reason` to the usual envelope:
 
 | `data.reason`          | HTTP | Meaning                                                                      |
 | ---------------------- | ---- | ---------------------------------------------------------------------------- |
-| `asset_library_locked` | 400  | The library opens after your first credit purchase                           |
+| `asset_library_locked` | 400  | The account does not have asset-library access yet                           |
 | `asset_library_full`   | 400  | Your plan's space or item count is used up — delete assets or move up a plan |
 | `asset_file_too_large` | 400  | The file is above your plan's per-file limit                                 |
 | `asset_daily_limit`    | 429  | Today's number of new assets is reached; wait for `Retry-After` (00:00 UTC)  |
@@ -1221,7 +1221,7 @@ A demo needs one request. A product needs to survive timeouts, duplicate webhook
 * [ ] Every `createTask` sends an `Idempotency-Key` derived from your own job ID, generated once, reused on every retry.
 * [ ] Only `429`, `500`, `503` and `50301` are retried, with backoff and `Retry-After` ([Errors](errors.md#writing-the-retry)).
 * [ ] `400`, `40004` and other "fix the request" errors are shown or logged, not retried.
-* [ ] If you show prices, you quote first and pass `quoteId` and `expectedCredits`, and handle `40901`.
+* [ ] If you show prices, you quote first, show `maxChargeUsd`, pass `quoteId` and `expectedCostUsd` (that `maxChargeUsd`), and handle `40901`.
 * [ ] A low balance (`40201`) reaches a person — an alert, an email, a banner — before users notice.
 
 ## Getting results
@@ -1244,7 +1244,8 @@ A demo needs one request. A product needs to survive timeouts, duplicate webhook
 * [ ] You know each model's price unit (per image, per second, per request) and the settings that raise it.
 * [ ] Previews and tests use the cheapest resolution and shortest duration.
 * [ ] A spend cap stops runaway loops before they empty the balance.
-* [ ] You check `credits` and `settled` rather than assuming the estimate was charged.
+* [ ] You check `costUsd` and `settled` rather than assuming the estimate was charged.
+* [ ] USD amounts stay exact decimal strings (or a decimal type) end to end; nothing converts them through binary floating point.
 
 ## Monitoring
 
@@ -1269,10 +1270,10 @@ Four small scripts for the jobs people automate first. Each one is complete: ins
 
 | Recipe                                       | Model                                        | Cost per item                     |
 | -------------------------------------------- | -------------------------------------------- | --------------------------------- |
-| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 10 credits per image              |
-| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
-| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 7 credits per 20 s of speech |
-| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
+| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | $0.01 per image                   |
+| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | $0.185 for 5 s at 768p            |
+| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about $0.007 per 20 s of speech   |
+| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | $0.185 for 5 s at 768p            |
 
 Swap the model for any other on [Models](https://popnow.ai/docs/models); keep the `input` fields to the ones that model's schema lists.
 
@@ -1494,7 +1495,7 @@ The link in the Slack message is signed and works for about 20 minutes; post the
 
 ## Pricing and limits
 
-Each recipe pays the model's normal price per item and nothing else; reading tasks and uploading files are free. Failed items cost nothing, and because each item has its own idempotency key, rerunning a script only creates the items that never went through. Before a large batch, price one item with [`jobs/quote`](https://popnow.ai/docs/billing#quote) and set a daily cap on the key ([Authentication](authentication.md)). Submitting hundreds of tasks at once is fine, within the [rate limits](limits.md).
+Each recipe pays the model's normal USD price per item from your API balance and nothing else; reading tasks and uploading files are free. Failed items cost nothing, and because each item has its own idempotency key, rerunning a script only creates the items that never went through. Before a large batch, price one item with [`jobs/quote`](https://popnow.ai/docs/billing#quote) and set a daily cap on the key ([Authentication](authentication.md)). Submitting hundreds of tasks at once is fine, within the [rate limits](limits.md).
 
 ## Common errors
 
@@ -1502,7 +1503,7 @@ Each recipe pays the model's normal price per item and nothing else; reading tas
 | ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ |
 | `KeyError: 'POPNOW_API_KEY'`         | The variable is not set in this shell                                   | `export POPNOW_API_KEY="sk-popnow-..."`                |
 | `RuntimeError: 400 …` naming a field | The model does not accept that field or value                           | Check the model's page; fields differ per model        |
-| `RuntimeError: 40201 …`              | Not enough credits for the next task                                    | Top up; tasks already accepted keep running            |
+| `RuntimeError: 40201 …`              | The API balance cannot cover the next task's hold                       | Add funds in API billing; accepted tasks keep running  |
 | `RuntimeError: 429 …`                | Too many requests at once                                               | Submit in smaller groups and honour `Retry-After`      |
 | `RuntimeError: failed: …`            | One item failed or was declined                                         | Nothing was charged for it; fix that row and rerun     |
 | `RuntimeError: 40003 …` on commit    | The uploaded bytes do not match the ticket                              | Ask for a new ticket and upload again                  |
@@ -1535,7 +1536,7 @@ Run it again. Each row uses the same idempotency key as before, so rows that wer
 
 Online version: <https://popnow.ai/docs/openai-videos>
 
-If your code already speaks the OpenAI Videos API, you can point it at PopNow and keep most of it. The compatible endpoints live under `https://api.popnow.ai/v1` and share keys, limits, validation and credits with the native API.
+If your code already speaks the OpenAI Videos API, you can point it at PopNow and keep most of it. The compatible endpoints live under `https://api.popnow.ai/v1` and share keys, limits, validation and the API USD balance with the native API.
 
 | OpenAI-style call             | Does                                        |
 | ----------------------------- | ------------------------------------------- |
@@ -1544,7 +1545,7 @@ If your code already speaks the OpenAI Videos API, you can point it at PopNow an
 | `GET /v1/videos/{id}/content` | Redirect (`302`) to the finished file       |
 | `GET /v1/models`              | List callable models in OpenAI's list shape |
 
-Only video, image and audio models are listed; chat and text endpoints are not part of the PopNow API.
+Chat models use their own standard protocols on the same base URL (OpenAI Chat Completions and Responses, Anthropic Messages, Gemini `generateContent`); see [Chat and compatible APIs](https://popnow.ai/docs/chat).
 
 ## Create a video
 
@@ -1800,7 +1801,7 @@ Uploading the input image is the three-step flow on [Media](media.md#upload-a-fi
 
 ## Pricing
 
-Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 48 credits per image, MiniMax H3 at 768p is 185 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
+Each run costs the model's normal USD price, paid from your API balance; the node adds nothing. Nano Banana 2.1 at 1K is $0.048 per image, MiniMax H3 at 768p is $0.185 for 5 seconds. Failed runs are not charged. Prices for every model are on [API pricing](https://popnow.ai/api/pricing) and each model's page; use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure. Add funds in [API billing](https://popnow.ai/api/console/billing); website credits do not pay for API calls.
 
 ## Common errors
 
@@ -1809,7 +1810,7 @@ Each run costs the model's normal price in credits; the node adds nothing. Nano 
 | `Set POPNOW_API_KEY before starting ComfyUI` | The variable is not in ComfyUI's environment                             | Set it in the same shell or `.bat` file, then restart             |
 | `PopNow 401: …`                              | Key missing, mistyped or revoked                                         | Create a new key in the API console                               |
 | `PopNow 400: …` naming a field               | `options` has a field the model does not accept, or a value out of range | Check the model's page; unknown fields are rejected               |
-| `PopNow 40201: …`                            | Not enough credits                                                       | Top up, or lower the resolution or length                         |
+| `PopNow 40201: …`                            | The API balance cannot cover the hold                                    | Add funds in API billing, or lower the resolution or length       |
 | `PopNow failed: …`                           | The model could not finish or declined the request                       | Nothing was charged; change the prompt or settings                |
 | `JSONDecodeError`                            | `options` is not valid JSON                                              | Use double quotes: `{"resolution": "2k"}`                         |
 | Node not in the search list                  | The file is not in `custom_nodes`, or ComfyUI was not restarted          | Check the path and restart; look for import errors in the console |

@@ -4,7 +4,25 @@ All notable changes to this repository are listed here. For changes to the API i
 
 ## Unreleased
 
-- Credit amounts follow the 2026-10-19 change to 1 credit = US$0.001: the spec descriptions, docs examples (`credits`, `estimatedCredits`, `cost`), recipe prices, README and `llms*.txt` now use the new unit and current prices.
+## 1.1.0 — 2026-11-01
+
+The PopNow API bills in exact USD from its own API balance, separate from website credits. This repository now
+uses the USD fields everywhere.
+
+- `openapi.yaml` is the current contract from <https://popnow.ai/docs/openapi.yaml> (MIT license block kept). It adds
+  the USD fields (`maxChargeUsd`, `expectedChargeUsd`, `expectedCostUsd`, `estimatedCostUsd`, `costUsd`,
+  `availableUsd`, `heldUsd`, `totalUsd`, the model `usd` rate snapshot) and marks the credit fields deprecated, and
+  it now covers the chat protocols, saved recipes and skills, and agent skills.
+- Examples (curl, Python, Node.js) print and confirm USD: `quote` shows `maxChargeUsd` and `expectedChargeUsd`,
+  `quote --create` sends `expectedCostUsd` set to `maxChargeUsd` (the Node and Python versions used to send the
+  typical `expectedCredits` instead of the maximum), task scripts print `estimatedCostUsd` and `costUsd`, and the
+  model lists print the `usd` rate. The n8n workflow outputs `costUsd`.
+- README, docs and `llms*.txt`: the API balance is separate from website credits, `40201` points to
+  <https://popnow.ai/api/console/billing>, prices link <https://popnow.ai/api/pricing>, the MCP answer describes the
+  developer MCP server (`https://api.popnow.ai/api/v1/mcp`, setup at <https://popnow.ai/api/mcp>), and agent skills
+  link <https://popnow.ai/api/skills>. Chat models are no longer described as unavailable.
+- Python examples send `User-Agent: popnow-api-examples/1.1`.
+- Earlier, unreleased: credit amounts followed the 2026-10-19 change to 1 credit = US$0.001.
 
 ## 1.0.0 — 2026-10-19
 

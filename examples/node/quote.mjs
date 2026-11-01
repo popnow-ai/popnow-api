@@ -1,6 +1,7 @@
-// Price a task before running it, then (with --create) create it at exactly that price.
+// Price a task in USD before running it, then (with --create) create it at exactly that price.
 // A quote creates nothing and holds nothing; it is valid for five minutes. Passing quoteId +
-// expectedCredits to createTask guarantees the hold matches (an expired quote fails with 40901).
+// expectedCostUsd (the quote's maxChargeUsd) to createTask guarantees the hold matches (an expired
+// quote fails with 40901). Amounts are exact USD decimal strings: keep them as strings.
 // Usage: node quote.mjs [--create]   (Node.js 18+, no dependencies)
 const API = `${process.env.POPNOW_API_BASE ?? 'https://api.popnow.ai'}/api/v1`;
 
@@ -32,13 +33,14 @@ const request = {
 };
 
 const quote = await api('/jobs/quote', { method: 'POST', body: request });
-console.log(`${quote.model}: up to ${quote.maxCredits} credits ($${quote.maxCharge}), usually ${quote.expectedCredits}; expires ${quote.expiresAt}`);
+console.log(`${quote.model}: up to $${quote.maxChargeUsd}, usually $${quote.expectedChargeUsd}; expires ${quote.expiresAt}`);
 
 if (process.argv.includes('--create')) {
   const task = await api('/jobs/createTask', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
-    body: { ...request, quoteId: quote.quoteId, expectedCredits: quote.expectedCredits },
+    // Confirm the maximum hold, not the typical charge.
+    body: { ...request, quoteId: quote.quoteId, expectedCostUsd: quote.maxChargeUsd },
   });
-  console.log('created', task.taskId, 'holding', task.estimatedCredits, 'credits');
+  console.log('created', task.taskId, 'holding', `$${task.estimatedCostUsd}`, 'from the API balance');
 }

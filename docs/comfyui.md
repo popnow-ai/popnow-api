@@ -212,7 +212,7 @@ Uploading the input image is the three-step flow on [Media](media.md#upload-a-fi
 
 ## Pricing
 
-Each run costs the model's normal price in credits; the node adds nothing. Nano Banana 2.1 at 1K is 48 credits per image, MiniMax H3 at 768p is 185 credits for 5 seconds. Failed runs are not charged. Prices for every model are on its page and in [Credits and refunds](https://popnow.ai/docs/credits-and-refunds); use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure.
+Each run costs the model's normal USD price, paid from your API balance; the node adds nothing. Nano Banana 2.1 at 1K is $0.048 per image, MiniMax H3 at 768p is $0.185 for 5 seconds. Failed runs are not charged. Prices for every model are on [API pricing](https://popnow.ai/api/pricing) and each model's page; use [`jobs/quote`](https://popnow.ai/docs/billing#quote) for an exact figure. Add funds in [API billing](https://popnow.ai/api/console/billing); website credits do not pay for API calls.
 
 ## Common errors
 
@@ -221,7 +221,7 @@ Each run costs the model's normal price in credits; the node adds nothing. Nano 
 | `Set POPNOW_API_KEY before starting ComfyUI` | The variable is not in ComfyUI's environment                             | Set it in the same shell or `.bat` file, then restart             |
 | `PopNow 401: …`                              | Key missing, mistyped or revoked                                         | Create a new key in the API console                               |
 | `PopNow 400: …` naming a field               | `options` has a field the model does not accept, or a value out of range | Check the model's page; unknown fields are rejected               |
-| `PopNow 40201: …`                            | Not enough credits                                                       | Top up, or lower the resolution or length                         |
+| `PopNow 40201: …`                            | The API balance cannot cover the hold                                    | Add funds in API billing, or lower the resolution or length       |
 | `PopNow failed: …`                           | The model could not finish or declined the request                       | Nothing was charged; change the prompt or settings                |
 | `JSONDecodeError`                            | `options` is not valid JSON                                              | Use double quotes: `{"resolution": "2k"}`                         |
 | Node not in the search list                  | The file is not in `custom_nodes`, or ComfyUI was not restarted          | Check the path and restart; look for import errors in the console |

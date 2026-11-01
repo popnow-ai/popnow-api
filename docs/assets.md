@@ -51,7 +51,7 @@ The response is the asset: `id`, `uri`, `name`, `kind` (`image`, `video` or `aud
 
 ### Storage plans
 
-Storage opens with your first credit purchase and grows with what you have bought over time; it never shrinks, and saved assets always stay usable. `GET /api/v1/assets/usage` shows the numbers for your account.
+Your storage plan sets how much you can keep; a plan never shrinks, and saved assets always stay usable. Storage eligibility is separate from the API USD balance: do not assume that adding API funds unlocks a storage plan. `GET /api/v1/assets/usage` shows your plan, its limits and what unlocks the next one; contact support if the library is locked and you expected otherwise.
 
 ### Errors
 
@@ -59,7 +59,7 @@ Asset library errors add a machine-readable `data.reason` to the usual envelope:
 
 | `data.reason`          | HTTP | Meaning                                                                      |
 | ---------------------- | ---- | ---------------------------------------------------------------------------- |
-| `asset_library_locked` | 400  | The library opens after your first credit purchase                           |
+| `asset_library_locked` | 400  | The account does not have asset-library access yet                           |
 | `asset_library_full`   | 400  | Your plan's space or item count is used up — delete assets or move up a plan |
 | `asset_file_too_large` | 400  | The file is above your plan's per-file limit                                 |
 | `asset_daily_limit`    | 429  | Today's number of new assets is reached; wait for `Retry-After` (00:00 UTC)  |

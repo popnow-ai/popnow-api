@@ -16,5 +16,5 @@ RES=$(curl -sS -X POST "$API/jobs/createTask?wait=60" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d "$BODY")
 
-echo "$RES" | jq '.data | {taskId, state, credits, url: .output.assets[0].url}'
+echo "$RES" | jq '.data | {taskId, state, costUsd, settled, url: .output.assets[0].url}'
 # If state is still "queued" or "running", follow up with ./poll-job.sh <taskId>.

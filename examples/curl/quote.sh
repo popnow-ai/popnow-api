@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Price a task before running it. Nothing is created and nothing is held.
-# The quote is valid for five minutes; pass quoteId and expectedCredits to createTask
-# to make sure the price you showed is the price that is held.
+# Price a task in USD before running it. Nothing is created and nothing is held.
+# The quote is valid for five minutes; pass quoteId and expectedCostUsd (the quote's
+# maxChargeUsd, an exact USD string) to createTask to make sure the price you showed
+# is the price that is held.
 # Requires: curl, jq
 set -euo pipefail
 API="${POPNOW_API_BASE:-https://api.popnow.ai}/api/v1"
@@ -18,4 +19,4 @@ curl -sS -X POST "$API/jobs/quote" \
       "resolution": "480p",
       "duration_seconds": 5
     }
-  }' | jq '.data | {quoteId, model, maxCredits, expectedCredits, maxCharge, expiresAt}'
+  }' | jq '.data | {quoteId, model, maxChargeUsd, expectedChargeUsd, currency, expiresAt}'

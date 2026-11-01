@@ -27,6 +27,7 @@ while true; do
   DELAY=$(( DELAY < 15 ? DELAY + 3 : 15 ))
 done
 
-echo "$TASK" | jq '.data | {taskId, state, credits, cost, errorCode, errorMessage, url: .output.assets[0].url}'
+# costUsd is the final USD charge once settled is true, otherwise the hold.
+echo "$TASK" | jq '.data | {taskId, state, costUsd, settled, errorCode, errorMessage, url: .output.assets[0].url}'
 # The signed URL works for about 20 minutes and needs no API key:
 #   curl -L -o result.mp4 "<url>"

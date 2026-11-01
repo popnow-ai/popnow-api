@@ -54,8 +54,7 @@ The body is exactly what `recordInfo` would return for the task:
     "model": "alibaba/wan-3.0/image-to-video",
     "state": "succeeded",
     "output": { "assets": [{ "url": "https://…", "mime": "video/mp4", "durationSeconds": 5 }] },
-    "credits": 225,
-    "cost": "0.225",
+    "costUsd": "0.225",
     "settled": true
   },
   "request_id": "whd_01JH8Z…"
@@ -206,13 +205,13 @@ The **Webhooks** page of the [API console](https://popnow.ai/api/console/webhook
 
 A webhook only fires when a task reaches a **final** state; `queued` and `running` are never delivered.
 
-| `data.state` | Meaning                                                                    | Credits                            |
+| `data.state` | Meaning                                                                    | Charge (`costUsd`)                 |
 | ------------ | -------------------------------------------------------------------------- | ---------------------------------- |
 | `succeeded`  | Files are in `output.assets`                                               | The actual price, at most the hold |
 | `failed`     | The model could not finish or declined the request; `errorCode` says which | Nothing; the hold is released      |
 | `expired`    | The task passed its deadline                                               | Nothing; the hold is released      |
 
-`canceled` exists only on old records. The full lifecycle, `wait` and polling are on [Tasks](tasks.md#states); refunds of failed tasks are on [Credits and refunds](https://popnow.ai/docs/credits-and-refunds#failed-tasks).
+`canceled` exists only on old records. The full lifecycle, `wait` and polling are on [Tasks](tasks.md#states); released holds of failed tasks are on [API balance and refunds](https://popnow.ai/docs/api-balance-and-refunds#failed-tasks).
 
 ## Troubleshooting
 
@@ -237,6 +236,6 @@ Task callbacks set with callBackUrl are signed with the account's webhook signin
 
 Seven retries over about nine hours: after 10 seconds, 30 seconds, 2 minutes, 10 minutes, 30 minutes, 2 hours and 6 hours. After that the delivery can be resent by hand from the console.
 
-### Do webhooks cost credits?
+### Do webhooks cost anything?
 
 No. Deliveries, retries and reading tasks are free; only the generation itself is charged.

@@ -45,10 +45,12 @@ When a model reports a specific reason for failing (for example an unreadable re
 
 ## Balance and caps
 
-| `code`  | HTTP | Meaning                                 | What to do                                                |
-| ------- | ---- | --------------------------------------- | --------------------------------------------------------- |
-| `40201` | 402  | Not enough credits for this task's hold | [Buy credits](https://popnow.ai/pricing), then send again |
-| `40202` | 402  | A key spend cap was reached             | Raise the cap in the API console, or wait for it to reset |
+| `code`  | HTTP | Meaning                                          | What to do                                                                  |
+| ------- | ---- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| `40201` | 402  | The API balance cannot cover this task's hold    | [Add funds](https://popnow.ai/api/console/billing), then send again         |
+| `40202` | 402  | A key spend cap was reached                      | Raise the cap in the API console, or wait for it to reset                   |
+
+The API balance is in USD and separate from website credits; website credits never pay for API calls.
 
 ## Permissions
 
@@ -68,7 +70,7 @@ A plain `403` with a valid key means the account cannot use the API right now; c
 | `50301` | 503  | The model cannot take tasks right now        | Yes, later — or choose another model |
 | `40004` | 400  | The model works, but not with these settings | No — change the setting              |
 
-Neither creates a task or holds credits.
+Neither creates a task or holds funds.
 
 ## Task failure codes
 

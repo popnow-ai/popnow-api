@@ -38,7 +38,7 @@ curl -X POST "https://api.popnow.ai/api/v1/jobs/createTask" \
 | `model`                      | Yes      | The model ID from [Models](https://popnow.ai/docs/models)                                         |
 | `input`                      | Yes      | The model's own fields, validated against its input schema                       |
 | `callBackUrl`                | No       | Public HTTPS URL that receives the finished task. See [Webhooks](webhooks.md) |
-| `quoteId`, `expectedCredits` | No       | Lock in a price you confirmed with [jobs/quote](https://popnow.ai/docs/billing#quote)             |
+| `quoteId`, `expectedCostUsd` | No       | Lock in a price you confirmed with [jobs/quote](https://popnow.ai/docs/billing#quote): send the quote's `maxChargeUsd` as `expectedCostUsd`, or `quoteId` alone |
 
 ### Headers
 
@@ -60,21 +60,20 @@ A new task comes back as HTTP `202`:
   "data": {
     "taskId": "job_01JH8Z4Q5W2N7R3K9M6P1C0VXD",
     "state": "queued",
-    "estimatedCredits": 225,
-    "estimatedCost": "0.225",
+    "estimatedCostUsd": "0.225",
     "deadlineAt": "2026-10-16T09:40:00Z"
   },
   "request_id": "req_…"
 }
 ```
 
-`202` means **accepted**, not finished. `estimatedCredits` is the amount held from your balance — the most this task can cost (`estimatedCost` is the same amount in US dollars). If creation fails instead, nothing is created and nothing is held; the `code` tells you why ([Errors](errors.md)).
+`202` means **accepted**, not finished. `estimatedCostUsd` is the exact USD amount held from your API balance — the most this task can cost. If creation fails instead, nothing is created and nothing is held; the `code` tells you why ([Errors](errors.md)).
 
 ## States
 
 `queued` → `running` → `succeeded` / `failed` / `expired`
 
-A task is in exactly one state at a time. Only succeeded is charged; every other final state returns the held credits in full.
+A task is in exactly one state at a time. Only succeeded is charged; every other final state releases the held funds in full.
 
 | State       | Final? | Meaning                                                                    |
 | ----------- | ------ | -------------------------------------------------------------------------- |
@@ -109,7 +108,7 @@ curl "https://api.popnow.ai/api/v1/jobs/recordInfo?taskId=job_01JH8Z4Q5W2N7R3K9M
 | `input`                                  | The input as it was run, including the `seed` that was picked if you left it out                                                |
 | `output.assets[]`                        | The files. Each has `url`, `expiresAt`, `mime`, and when it applies `width`, `height`, `durationSeconds`, `bytes`, `role`       |
 | `errorCode`, `errorMessage`              | Why a task failed. Branch on `errorCode`, show `errorMessage`                                                                   |
-| `credits`, `cost`, `settled`             | While `settled` is `false`, `credits` is the hold; once `true`, it is the final charge. `cost` is the same amount in US dollars |
+| `costUsd`, `settled`                     | While `settled` is `false`, `costUsd` is the hold; once `true`, it is the final charge. An exact USD decimal string            |
 | `createdAt`, `completedAt`, `deadlineAt` | Timestamps; `deadlineAt` is when an unfinished task expires                                                                     |
 | `retention.outputsExpireAt`              | When this task's files will be removed                                                                                          |
 | `contentState`                           | `present`, or `expired` / `purged` once the content has been removed                                                            |

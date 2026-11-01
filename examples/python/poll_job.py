@@ -13,7 +13,7 @@ import urllib.request
 
 API = os.environ.get("POPNOW_API_BASE", "https://api.popnow.ai") + "/api/v1"
 # Send a descriptive User-Agent: some networks block the default "Python-urllib" one.
-UA = "popnow-api-examples/1.0 (python)"
+UA = "popnow-api-examples/1.1 (python)"
 FINAL = ("succeeded", "failed", "expired", "canceled")
 
 
@@ -59,7 +59,8 @@ def main():
     print(json.dumps({
         "taskId": task["taskId"],
         "state": task["state"],
-        "credits": task.get("credits"),
+        # The final USD charge once settled, otherwise the hold. An exact decimal string.
+        "costUsd": task.get("costUsd"),
         "settled": task.get("settled"),
         "errorCode": task.get("errorCode"),
         "errorMessage": task.get("errorMessage"),

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# List every model your key can call, with its price in credits.
+# List every model your key can call, with its USD price (`usd` rate snapshot).
 # Usage: ./list-models.sh [image|video|audio]
 # Requires: curl, jq
 set -euo pipefail
@@ -11,4 +11,4 @@ if [ -n "${1:-}" ]; then QUERY="?modality=$1"; fi
 
 curl -sS "$API/models$QUERY" \
   -H "Authorization: Bearer $KEY" |
-  jq -r 'if .code != 200 then error("\(.code) \(.msg) (\(.request_id))") else .data.items[] | "\(.model)\t\(.modality)\t\(.credits)" end'
+  jq -r 'if .code != 200 then error("\(.code) \(.msg) (\(.request_id))") else .data.items[] | "\(.model)\t\(.modality)\t\(if .usd.perUnit then "$\(.usd.perUnit) \(.usd.unit // "")" else "see /api/v1/models/\(.model)" end)" end'

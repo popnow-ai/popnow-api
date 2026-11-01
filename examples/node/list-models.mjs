@@ -1,4 +1,4 @@
-// List every model your key can call, with its price in credits.
+// List every model your key can call, with its USD price.
 // Usage: node list-models.mjs [image|video|audio]   (Node.js 18+, no dependencies)
 const API = `${process.env.POPNOW_API_BASE ?? 'https://api.popnow.ai'}/api/v1`;
 
@@ -21,5 +21,9 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
 
 const modality = process.argv[2];
 const data = await api('/models' + (modality ? `?modality=${encodeURIComponent(modality)}` : ''));
-for (const m of data.items) console.log(m.model.padEnd(60), m.modality.padEnd(6), m.credits);
+for (const m of data.items) {
+  // `usd` is a rate snapshot with string amounts; jobs/quote gives the exact price of one request.
+  const price = m.usd?.perUnit !== undefined ? `$${m.usd.perUnit} ${m.usd.unit ?? ''}` : `see GET /api/v1/models/${m.model}`;
+  console.log(m.model.padEnd(60), m.modality.padEnd(6), price);
+}
 console.error(`${data.total} models`);

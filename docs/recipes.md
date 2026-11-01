@@ -8,10 +8,10 @@ Four small scripts for the jobs people automate first. Each one is complete: ins
 
 | Recipe                                       | Model                                        | Cost per item                     |
 | -------------------------------------------- | -------------------------------------------- | --------------------------------- |
-| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | 10 credits per image              |
-| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
-| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about 7 credits per 20 s of speech |
-| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | 185 credits for 5 s at 768p       |
+| [Batch images from a CSV](#batch-images-from-a-csv)     | `alibaba/z-image-turbo/text-to-image`        | $0.01 per image                   |
+| [Photo to video](#photo-to-video)            | `minimax/h3/image-to-video`                  | $0.185 for 5 s at 768p            |
+| [A voiceover per line](#a-voiceover-per-line)           | `google/gemini-3.8-flash-tts/text-to-speech` | about $0.007 per 20 s of speech   |
+| [Slack alert when a video is ready](#slack-alert-when-a-video-is-ready) | `minimax/h3/image-to-video`                  | $0.185 for 5 s at 768p            |
 
 Swap the model for any other on [Models](https://popnow.ai/docs/models); keep the `input` fields to the ones that model's schema lists.
 
@@ -233,7 +233,7 @@ The link in the Slack message is signed and works for about 20 minutes; post the
 
 ## Pricing and limits
 
-Each recipe pays the model's normal price per item and nothing else; reading tasks and uploading files are free. Failed items cost nothing, and because each item has its own idempotency key, rerunning a script only creates the items that never went through. Before a large batch, price one item with [`jobs/quote`](https://popnow.ai/docs/billing#quote) and set a daily cap on the key ([Authentication](authentication.md)). Submitting hundreds of tasks at once is fine, within the [rate limits](limits.md).
+Each recipe pays the model's normal USD price per item from your API balance and nothing else; reading tasks and uploading files are free. Failed items cost nothing, and because each item has its own idempotency key, rerunning a script only creates the items that never went through. Before a large batch, price one item with [`jobs/quote`](https://popnow.ai/docs/billing#quote) and set a daily cap on the key ([Authentication](authentication.md)). Submitting hundreds of tasks at once is fine, within the [rate limits](limits.md).
 
 ## Common errors
 
@@ -241,7 +241,7 @@ Each recipe pays the model's normal price per item and nothing else; reading tas
 | ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ |
 | `KeyError: 'POPNOW_API_KEY'`         | The variable is not set in this shell                                   | `export POPNOW_API_KEY="sk-popnow-..."`                |
 | `RuntimeError: 400 …` naming a field | The model does not accept that field or value                           | Check the model's page; fields differ per model        |
-| `RuntimeError: 40201 …`              | Not enough credits for the next task                                    | Top up; tasks already accepted keep running            |
+| `RuntimeError: 40201 …`              | The API balance cannot cover the next task's hold                       | Add funds in API billing; accepted tasks keep running  |
 | `RuntimeError: 429 …`                | Too many requests at once                                               | Submit in smaller groups and honour `Retry-After`      |
 | `RuntimeError: failed: …`            | One item failed or was declined                                         | Nothing was charged for it; fix that row and rerun     |
 | `RuntimeError: 40003 …` on commit    | The uploaded bytes do not match the ticket                              | Ask for a new ticket and upload again                  |
