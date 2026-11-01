@@ -1511,7 +1511,7 @@ Each recipe pays the model's normal USD price per item from your API balance and
 
 ### Is there an official Python or Node SDK?
 
-Not yet. The API is plain REST with JSON, so these recipes use requests and the built-in fetch, and the OpenAPI file can generate a typed client.
+Yes: [popnow-python](https://github.com/popnow-ai/popnow-python) (`pip install popnow`) and [popnow-js](https://github.com/popnow-ai/popnow-js) (`npm install popnow`), plus Go, Java and PHP clients; see [popnow.ai/docs/sdks](https://popnow.ai/docs/sdks). The API is plain REST with JSON, so these recipes use requests and the built-in fetch and work without an SDK.
 
 ### How many tasks can a batch run at once?
 
