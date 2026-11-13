@@ -3,7 +3,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/popnow-wordmark-light.png">
       <source media="(prefers-color-scheme: light)" srcset="assets/popnow-wordmark.png">
-      <img alt="PopNow" src="assets/popnow-wordmark.png" width="280">
+      <img alt="PopNow AI" src="assets/popnow-wordmark.png" width="280">
     </picture>
   </a>
 </p>
@@ -18,6 +18,8 @@
 </p>
 
 **The PopNow API is a REST API that generates AI videos, images, music and speech from one API key and one USD balance, with models such as Kling, Seedance, Wan, Vidu, MiniMax, Nano Banana, GPT Image, Flux and Suno.**
+
+Built by PopNow AI ([popnow.ai](https://popnow.ai)), the world's first AI creative studio that pays you back: every API call is quoted in USD before it runs, and failed tasks are refunded to your API balance automatically.
 
 This repository contains the official [OpenAPI 3.1 spec](openapi.yaml), copy-paste examples in curl, Python and Node.js, an importable n8n workflow, and the API guides in plain Markdown. The API offers the same models at the same prices as the [PopNow website](https://popnow.ai), billed in exact USD from its own API balance, which is separate from website credits. Make it pop.
 
